@@ -1,0 +1,382 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: #000000;
+  --foreground: #f8fafc;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --popover: #0f172a;
+  --popover-foreground: #f8fafc;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #334155;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #334155;
+  --input: #334155;
+  --ring: #6366f1;
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: #000000;
+  --foreground: #f8fafc;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --popover: #0f172a;
+  --popover-foreground: #f8fafc;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #334155;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: #475569;
+  --input: #334155;
+  --ring: #6366f1;
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #000000;
+  color: #f8fafc;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.gobo-hide-cursor,
+html.gobo-hide-cursor *,
+html.gobo-hide-cursor:fullscreen,
+html.gobo-hide-cursor:fullscreen *,
+html.gobo-hide-cursor:-webkit-full-screen,
+html.gobo-hide-cursor:-webkit-full-screen * {
+  cursor: none !important;
+}
+
+html:fullscreen,
+html:-webkit-full-screen,
+html:fullscreen body,
+html:-webkit-full-screen body {
+  background: #000000;
+  width: 100%;
+  height: 100%;
+}
+
+.gobo-stage {
+  position: fixed;
+  inset: 0;
+  background: #000000;
+  overflow: hidden;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gobo-stage ::selection {
+  background: transparent;
+}
+
+.gobo-word {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  max-width: 92vw;
+  margin: 0;
+  padding: 0.08em 0.14em;
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gobo-panel {
+  position: fixed;
+  z-index: 40;
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  width: min(22rem, calc(100vw - 1.5rem));
+  max-height: min(85dvh, calc(100dvh - 1.5rem));
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+  animation: gobo-panel-in 0.2s ease;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+@keyframes gobo-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.gobo-panel-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.85rem 1rem 0.35rem;
+}
+
+.gobo-panel-head h2 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.gobo-panel-body {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.35rem 1rem 0.85rem;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+  touch-action: pan-y;
+}
+
+.gobo-close {
+  width: auto;
+  height: auto;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.gobo-close:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.gobo-field {
+  margin-bottom: 0.65rem;
+}
+
+.gobo-field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.gobo-field-label span {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.gobo-panel [data-slot="input"],
+.gobo-panel [data-slot="textarea"],
+.gobo-panel [data-slot="select-trigger"] {
+  width: 100%;
+  border-color: #334155;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+
+.gobo-panel [data-slot="textarea"] {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.gobo-panel input[type="color"] {
+  height: 2.25rem;
+  padding: 0.15rem;
+  cursor: pointer;
+}
+
+.gobo-panel input[type="checkbox"] {
+  pointer-events: none;
+}
+
+.gobo-panel [data-slot="slider-track"] {
+  height: 0.35rem;
+  background: #334155;
+}
+
+.gobo-panel [data-slot="slider-range"] {
+  background: #6366f1;
+}
+
+.gobo-panel [data-slot="slider-thumb"] {
+  border-color: #6366f1;
+  background: #e2e8f0;
+}
+
+.gobo-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.gobo-dimmed {
+  opacity: 0.4;
+}
+
+.gobo-menu-btn {
+  width: 100%;
+  height: auto;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: #334155;
+  color: #f8fafc;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.gobo-menu-btn:hover {
+  background: #475569;
+  color: #f8fafc;
+}
+
+.gobo-hint {
+  margin: 0.15rem 0 0;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.gobo-panel button,
+.gobo-panel [role="slider"],
+.gobo-panel label {
+  cursor: pointer;
+}
+
+.gobo-panel textarea,
+.gobo-panel input:not([type="color"]) {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+}
