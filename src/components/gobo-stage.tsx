@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,12 +78,32 @@ function sliderNumber(value: number | readonly number[]) {
   return typeof value === "number" ? value : (value[0] ?? 0);
 }
 
-function paintAngle(node: HTMLDivElement | null, angle: number) {
-  const normalized = normalizeAngle(angle);
-  if (!node) return normalized;
-  node.style.transform = `translate3d(-50%, -50%, 0) rotate(${normalized}deg)`;
-  node.dataset.rotation = normalized.toFixed(3);
-  return normalized;
+type SpinMotion = {
+  node: HTMLDivElement;
+  anim: Animation;
+};
+
+/** One turn per second at playbackRate 1, so rate is degrees-per-second / 360. */
+const SPIN_TURN_MS = 1000;
+
+function attachSpin(node: HTMLDivElement, angle: number, speed: number): SpinMotion {
+  node.getAnimations().forEach((animation) => animation.cancel());
+  const anim = node.animate([{ rotate: "0deg" }, { rotate: "360deg" }], {
+    duration: SPIN_TURN_MS,
+    iterations: Infinity,
+    easing: "linear",
+  });
+  const turns = ((angle % 360) + 360) % 360;
+  anim.currentTime = (turns / 360) * SPIN_TURN_MS;
+  anim.playbackRate = speed / 360;
+  return { node, anim };
+}
+
+function liveAngle(motion: SpinMotion | null, fallback: number) {
+  if (!motion) return fallback;
+  const time = Number(motion.anim.currentTime ?? 0);
+  if (!Number.isFinite(time)) return fallback;
+  return (time / SPIN_TURN_MS) * 360;
 }
 
 function formatDegrees(value: number) {
@@ -124,18 +144,25 @@ export function GoboStage() {
   const hideTimer = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const goboRef = useRef<HTMLDivElement>(null);
+  const motionRef = useRef<SpinMotion | null>(null);
   const angleRef = useRef(settings.rotation);
   const shownRef = useRef(Math.round(settings.rotation));
   const settingsRef = useRef(settings);
 
+  function currentAngle() {
+    return liveAngle(motionRef.current, angleRef.current);
+  }
+
   const bindGobo = useCallback((node: HTMLDivElement | null) => {
     goboRef.current = node;
-    paintAngle(node, angleRef.current);
+    if (!node) {
+      angleRef.current = liveAngle(motionRef.current, angleRef.current);
+      motionRef.current?.anim.cancel();
+      motionRef.current = null;
+      return;
+    }
+    motionRef.current = attachSpin(node, angleRef.current, settingsRef.current.spin);
   }, []);
-
-  useLayoutEffect(() => {
-    paintAngle(goboRef.current, angleRef.current);
-  });
 
   function clearHideTimer() {
     if (hideTimer.current !== null) {
@@ -158,7 +185,7 @@ export function GoboStage() {
 
   function setPanel(next: boolean) {
     if (next) {
-      const rotation = normalizeAngle(angleRef.current);
+      const rotation = normalizeAngle(currentAngle());
       const rounded = Math.round(rotation * 10) / 10;
       if (rounded !== settingsRef.current.rotation) {
         shownRef.current = Math.round(rounded);
@@ -180,10 +207,14 @@ export function GoboStage() {
   }
 
   function update(patch: Partial<GoboSettings>) {
+    if (patch.spin !== undefined && motionRef.current?.anim) {
+      motionRef.current.anim.playbackRate = patch.spin / 360;
+    }
     const rotation =
       patch.rotation !== undefined
         ? patch.rotation
-        : Math.round(normalizeAngle(angleRef.current) * 10) / 10;
+        : Math.round(normalizeAngle(currentAngle()) * 10) / 10;
+    angleRef.current = currentAngle();
     shownRef.current = Math.round(rotation);
     const next = { ...settingsRef.current, ...patch, rotation };
     settingsRef.current = next;
@@ -220,8 +251,7 @@ export function GoboStage() {
           SPIN_MAX,
           Math.max(SPIN_MIN, settingsRef.current.spin + direction * SPIN_STEP),
         );
-        const rotation = Math.round(normalizeAngle(angleRef.current) * 10) / 10;
-        update({ spin, rotation });
+        update({ spin });
         return;
       }
 
@@ -258,11 +288,11 @@ export function GoboStage() {
 
   useEffect(() => {
     let frame = 0;
-    let last = performance.now();
-    let lastPersist = last;
+    let lastPersist = performance.now();
 
     const persistAngle = () => {
-      const rotation = Math.round(normalizeAngle(angleRef.current) * 10) / 10;
+      const rotation = Math.round(normalizeAngle(currentAngle()) * 10) / 10;
+      angleRef.current = currentAngle();
       const next = { ...settingsRef.current, rotation };
       settingsRef.current = next;
       saveSettings(next);
@@ -270,13 +300,11 @@ export function GoboStage() {
     };
 
     const tick = (now: number) => {
-      const dt = Math.min((now - last) / 1000, 0.05);
-      last = now;
       const speed = settingsRef.current.spin;
-      if (speed !== 0 && dt > 0) {
-        angleRef.current += speed * dt;
-        paintAngle(goboRef.current, angleRef.current);
-        const rotation = Math.round(normalizeAngle(angleRef.current) * 10) / 10;
+      if (speed !== 0) {
+        const angle = currentAngle();
+        angleRef.current = angle;
+        const rotation = Math.round(normalizeAngle(angle) * 10) / 10;
         const shown = Math.round(rotation);
         if (openRef.current && shown !== shownRef.current) {
           shownRef.current = shown;
@@ -296,11 +324,7 @@ export function GoboStage() {
 
     frame = requestAnimationFrame(tick);
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") {
-        persistAngle();
-        return;
-      }
-      last = performance.now();
+      if (document.visibilityState === "hidden") persistAngle();
     };
     window.addEventListener("pagehide", persistAngle);
     document.addEventListener("visibilitychange", onVisibility);

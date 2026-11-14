@@ -174,12 +174,11 @@ html:-webkit-full-screen body {
 }
 
 .gobo-spin {
-  /* Layer that rotates without repainting the glyphs. */
   position: absolute;
   top: 50%;
   left: 50%;
+  translate: -50% -50%;
   transform-origin: center;
-  will-change: transform;
   pointer-events: none;
   user-select: none;
 }
@@ -192,6 +191,8 @@ html:-webkit-full-screen body {
   background: transparent;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
 }
 
 .gobo-panel {
