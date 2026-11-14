@@ -16,6 +16,7 @@ export const SPIN_MIN = -180;
 export const SPIN_MAX = 180;
 
 export type TextAlign = "left" | "center" | "right";
+export type ProjectionSurface = "floor" | "wall";
 
 export type GoboSettings = {
   text: string;
@@ -34,10 +35,13 @@ export type GoboSettings = {
   /** Degrees per second. The slider sets this directly. Positive is clockwise. */
   spin: number;
   /**
-   * Beam depression toward the floor, in degrees.
-   * 0 is a horizontal beam. 90 points straight down.
+   * Beam angle in degrees, 0 to 90.
+   * On the floor, 0 is horizontal and 90 points straight down.
+   * On a wall, 0 aims straight at the surface and higher values pitch off that aim.
    */
   projectorAngle: number;
+  /** Floor is the default. Wall is a vertical surface. */
+  surface: ProjectionSurface;
 };
 
 export const defaultSettings: GoboSettings = {
@@ -55,6 +59,7 @@ export const defaultSettings: GoboSettings = {
   rotation: 0,
   spin: 0,
   projectorAngle: 0,
+  surface: "floor",
 };
 
 /** Wrap any angle into the slider range. +180 stays on the clockwise end. */
@@ -115,6 +120,7 @@ export function sanitizeSettings(input: unknown): GoboSettings {
       clamp(raw.projectorAngle, PROJECTOR_MIN, PROJECTOR_MAX, defaultSettings.projectorAngle),
       0,
     ),
+    surface: raw.surface === "wall" ? "wall" : "floor",
   };
 }
 

@@ -267,6 +267,21 @@ html:-webkit-full-screen body {
   margin-bottom: 0.65rem;
 }
 
+.gobo-surface {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.gobo-surface [data-slot="button"] {
+  width: 100%;
+  height: auto;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .gobo-field-label {
   display: flex;
   align-items: baseline;

@@ -1,7 +1,8 @@
 /**
- * Beam depression toward the floor, in degrees.
- * 0 is a horizontal beam and applies no skew.
- * 90 points straight down. That is the full keystone, so the gobo lands square on the floor.
+ * Beam angle, in degrees. 0 applies no skew. 90 is full keystone.
+ * On the floor, 0 is a horizontal beam and 90 points straight down.
+ * On a wall, 0 aims straight at the surface and 90 is pitched fully off that aim.
+ * Either way the far edge is the top of the gobo, and it narrows so the mark lands square.
  */
 export const PROJECTOR_MIN = 0;
 export const PROJECTOR_MAX = 90;

@@ -47,6 +47,7 @@ const CONTROL_SELECTOR = [
   "[data-slot='slider']",
   "[data-slot='slider-thumb']",
   "[data-slot='switch']",
+  "[data-slot='button']",
 ].join(",");
 
 const IGNORED_KEYS = new Set([
@@ -159,6 +160,7 @@ export function GoboStage() {
       window.innerHeight,
     );
     canvas.dataset.projector = String(settingsRef.current.projectorAngle);
+    canvas.dataset.surface = settingsRef.current.surface;
     if (placementRef.current === next) return;
     placementRef.current = next;
     canvas.style.transform = next;
@@ -361,7 +363,7 @@ export function GoboStage() {
 
   useEffect(() => {
     applyPlacement();
-  }, [settings.projectorAngle, viewport.w, viewport.h]);
+  }, [settings.projectorAngle, settings.surface, viewport.w, viewport.h]);
 
   const frameKey = [
     settings.text,
@@ -448,6 +450,7 @@ export function GoboStage() {
       data-panel={open ? "open" : "closed"}
       data-spin={settings.spin}
       data-projector={settings.projectorAngle}
+      data-surface={settings.surface}
       onPointerDown={(event) => {
         const target = event.target;
         if (target instanceof Node && panelRef.current?.contains(target)) return;
@@ -572,6 +575,30 @@ export function GoboStage() {
             </div>
 
             <div className="gobo-field">
+              <Label className="gobo-field-label" id="gobo-surface-label">
+                Surface
+              </Label>
+              <div className="gobo-surface" role="group" aria-labelledby="gobo-surface-label">
+                <Button
+                  type="button"
+                  variant={settings.surface === "floor" ? "default" : "secondary"}
+                  aria-pressed={settings.surface === "floor"}
+                  onClick={() => update({ surface: "floor" })}
+                >
+                  Floor
+                </Button>
+                <Button
+                  type="button"
+                  variant={settings.surface === "wall" ? "default" : "secondary"}
+                  aria-pressed={settings.surface === "wall"}
+                  onClick={() => update({ surface: "wall" })}
+                >
+                  Wall
+                </Button>
+              </div>
+            </div>
+
+            <div className="gobo-field">
               <Label htmlFor="gobo-projector" className="gobo-field-label">
                 Projector
                 <span>{formatDegrees(settings.projectorAngle)}</span>
@@ -586,7 +613,9 @@ export function GoboStage() {
                 onValueChange={(next) => update({ projectorAngle: sliderNumber(next) })}
               />
               <p className="gobo-speed">
-                0° is a horizontal beam. 90° points straight down at the floor.
+                {settings.surface === "floor"
+                  ? "0° is a horizontal beam. 90° points straight down at the floor."
+                  : "0° aims straight at the wall. Raising it pitches the projector off that aim."}
               </p>
             </div>
 
@@ -710,8 +739,9 @@ export function GoboStage() {
               fullscreen. Rotation sets the spin directly: the middle is stopped, left is
               counterclockwise, and right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add{" "}
               {SPIN_STEP}°/s on top of that and can reverse it. At zero speed the gobo holds its angle.
-              Projector aims at the floor, from a horizontal beam at 0° to straight down at 90°. The gobo
-              is pre-warped so it still appears square on the floor. The panel hides after 4 seconds of
+              Floor runs from a horizontal beam at 0° to straight down at 90°. Wall starts aimed straight
+              at the surface, and a higher angle pitches off that aim. Either way the gobo is pre-warped
+              so it lands square. The panel hides after 4 seconds of
               quiet, and every change is kept in this browser. Clear the text for a pure black frame.
             </p>
           </div>
