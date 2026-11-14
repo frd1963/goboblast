@@ -1,4 +1,5 @@
 import { getFont } from "@/lib/fonts";
+import { PROJECTOR_MAX, PROJECTOR_MIN } from "@/lib/projector";
 
 export const STORAGE_KEY = "goboblast-settings";
 
@@ -32,6 +33,11 @@ export type GoboSettings = {
   rotation: number;
   /** Degrees per second. The slider sets this directly. Positive is clockwise. */
   spin: number;
+  /**
+   * Projector pitch off the surface normal, in degrees.
+   * 0 aims straight (horizontal beam, vertical surface). Positive pitches up.
+   */
+  projectorAngle: number;
 };
 
 export const defaultSettings: GoboSettings = {
@@ -48,6 +54,7 @@ export const defaultSettings: GoboSettings = {
   glow: 0,
   rotation: 0,
   spin: 0,
+  projectorAngle: 0,
 };
 
 /** Wrap any angle into the slider range. +180 stays on the clockwise end. */
@@ -104,6 +111,10 @@ export function sanitizeSettings(input: unknown): GoboSettings {
       1,
     ),
     spin: round(clamp(raw.spin, SPIN_MIN, SPIN_MAX, defaultSettings.spin), 1),
+    projectorAngle: round(
+      clamp(raw.projectorAngle, PROJECTOR_MIN, PROJECTOR_MAX, defaultSettings.projectorAngle),
+      0,
+    ),
   };
 }
 

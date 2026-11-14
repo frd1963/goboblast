@@ -17,6 +17,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
+import { PROJECTOR_MAX, PROJECTOR_MIN, projectorTransform } from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
   HIDE_AFTER_MS,
@@ -116,6 +117,7 @@ export function GoboStage() {
   const shownRef = useRef(Math.round(settings.rotation));
   const settingsRef = useRef(settings);
   const buildRef = useRef(0);
+  const placementRef = useRef("");
 
   const bindCanvas = useCallback((node: HTMLCanvasElement | null) => {
     canvasRef.current = node;
@@ -144,6 +146,22 @@ export function GoboStage() {
     shownFrameRef.current = index;
     canvas.dataset.rotation = normalizeAngle(angleRef.current).toFixed(2);
     canvas.dataset.frame = String(index);
+    applyPlacement();
+  }
+
+  function applyPlacement() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const next = projectorTransform(
+      settingsRef.current.projectorAngle,
+      cssSizeRef.current,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    canvas.dataset.projector = String(settingsRef.current.projectorAngle);
+    if (placementRef.current === next) return;
+    placementRef.current = next;
+    canvas.style.transform = next;
   }
 
   function releaseFrames() {
@@ -324,6 +342,8 @@ export function GoboStage() {
       window.removeEventListener("pagehide", persistAngle);
       document.removeEventListener("visibilitychange", onVisibility);
     };
+    // The loop reads the latest spin and frames through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const font = getFont(settings.font);
@@ -338,6 +358,10 @@ export function GoboStage() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  useEffect(() => {
+    applyPlacement();
+  }, [settings.projectorAngle, viewport.w, viewport.h]);
 
   const frameKey = [
     settings.text,
@@ -423,6 +447,7 @@ export function GoboStage() {
       className="gobo-stage"
       data-panel={open ? "open" : "closed"}
       data-spin={settings.spin}
+      data-projector={settings.projectorAngle}
       onPointerDown={(event) => {
         const target = event.target;
         if (target instanceof Node && panelRef.current?.contains(target)) return;
@@ -546,6 +571,28 @@ export function GoboStage() {
               </p>
             </div>
 
+            <div className="gobo-field">
+              <Label htmlFor="gobo-projector" className="gobo-field-label">
+                Projector
+                <span>{formatDegrees(settings.projectorAngle)}</span>
+              </Label>
+              <div className="gobo-bipolar">
+                <span className="gobo-bipolar-zero" aria-hidden="true" />
+                <Slider
+                  id="gobo-projector"
+                  min={PROJECTOR_MIN}
+                  max={PROJECTOR_MAX}
+                  step={1}
+                  value={[settings.projectorAngle]}
+                  aria-label="Projector angle"
+                  onValueChange={(next) => update({ projectorAngle: sliderNumber(next) })}
+                />
+              </div>
+              <p className="gobo-speed">
+                0° aims straight at the surface. Positive tilts the projector up, negative tilts it down.
+              </p>
+            </div>
+
             <div className="gobo-colors">
               <div className="gobo-field">
                 <Label htmlFor="gobo-color" className="gobo-field-label">
@@ -663,9 +710,11 @@ export function GoboStage() {
 
             <p className="gobo-hint">
               Click the stage or press any unassigned key to open this panel. Esc closes it. F toggles
-              fullscreen. Rotation sets the spin directly: the middle is stopped, left is
+              fullscreen.               Rotation sets the spin directly: the middle is stopped, left is
               counterclockwise, and right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add{" "}
               {SPIN_STEP}°/s on top of that and can reverse it. At zero speed the gobo holds its angle.
+              Projector is the tilt off a straight-on aim, and the gobo is keystoned so the beam still
+              lands square.
               The panel hides after 4 seconds of quiet, and every change is kept in this browser. Clear
               the text for a pure black frame.
             </p>
