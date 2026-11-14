@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
   HIDE_AFTER_MS,
@@ -78,34 +79,6 @@ function sliderNumber(value: number | readonly number[]) {
   return typeof value === "number" ? value : (value[0] ?? 0);
 }
 
-type SpinMotion = {
-  node: HTMLDivElement;
-  anim: Animation;
-};
-
-/** One turn per second at playbackRate 1, so rate is degrees-per-second / 360. */
-const SPIN_TURN_MS = 1000;
-
-function attachSpin(node: HTMLDivElement, angle: number, speed: number): SpinMotion {
-  node.getAnimations().forEach((animation) => animation.cancel());
-  const anim = node.animate([{ rotate: "0deg" }, { rotate: "360deg" }], {
-    duration: SPIN_TURN_MS,
-    iterations: Infinity,
-    easing: "linear",
-  });
-  const turns = ((angle % 360) + 360) % 360;
-  anim.currentTime = (turns / 360) * SPIN_TURN_MS;
-  anim.playbackRate = speed / 360;
-  return { node, anim };
-}
-
-function liveAngle(motion: SpinMotion | null, fallback: number) {
-  if (!motion) return fallback;
-  const time = Number(motion.anim.currentTime ?? 0);
-  if (!Number.isFinite(time)) return fallback;
-  return (time / SPIN_TURN_MS) * 360;
-}
-
 function formatDegrees(value: number) {
   return `${Math.round(value)}°`;
 }
@@ -119,14 +92,6 @@ function angleCaption(rotation: number, spin: number) {
   const angle = formatDegrees(rotation);
   if (spin === 0) return `Holding ${angle}`;
   return angle;
-}
-
-function glowFilter(strength: number, color: string) {
-  if (strength <= 0) return "none";
-  const amount = strength / 100;
-  const tight = (amount * 1.1).toFixed(3);
-  const wide = (amount * 3.4).toFixed(3);
-  return `drop-shadow(0 0 ${tight}vmin ${color}) drop-shadow(0 0 ${wide}vmin ${color})`;
 }
 
 function toggleFullscreen() {
@@ -143,26 +108,49 @@ export function GoboStage() {
   const openRef = useRef(false);
   const hideTimer = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const goboRef = useRef<HTMLDivElement>(null);
-  const motionRef = useRef<SpinMotion | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const framesRef = useRef<ImageBitmap[]>([]);
+  const cssSizeRef = useRef(0);
+  const shownFrameRef = useRef(-1);
   const angleRef = useRef(settings.rotation);
   const shownRef = useRef(Math.round(settings.rotation));
   const settingsRef = useRef(settings);
+  const buildRef = useRef(0);
 
-  function currentAngle() {
-    return liveAngle(motionRef.current, angleRef.current);
+  const bindCanvas = useCallback((node: HTMLCanvasElement | null) => {
+    canvasRef.current = node;
+    shownFrameRef.current = -1;
+  }, []);
+
+  function paintFrame() {
+    const canvas = canvasRef.current;
+    const frames = framesRef.current;
+    if (!canvas || frames.length === 0) return;
+    const index = frameIndex(angleRef.current);
+    if (index === shownFrameRef.current) return;
+    const bitmap = frames[index];
+    if (!bitmap) return;
+    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+    }
+    const cssSize = cssSizeRef.current;
+    canvas.style.width = `${cssSize}px`;
+    canvas.style.height = `${cssSize}px`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0);
+    shownFrameRef.current = index;
+    canvas.dataset.rotation = normalizeAngle(angleRef.current).toFixed(2);
+    canvas.dataset.frame = String(index);
   }
 
-  const bindGobo = useCallback((node: HTMLDivElement | null) => {
-    goboRef.current = node;
-    if (!node) {
-      angleRef.current = liveAngle(motionRef.current, angleRef.current);
-      motionRef.current?.anim.cancel();
-      motionRef.current = null;
-      return;
-    }
-    motionRef.current = attachSpin(node, angleRef.current, settingsRef.current.spin);
-  }, []);
+  function releaseFrames() {
+    framesRef.current.forEach((frame) => frame.close());
+    framesRef.current = [];
+    shownFrameRef.current = -1;
+  }
 
   function clearHideTimer() {
     if (hideTimer.current !== null) {
@@ -185,7 +173,7 @@ export function GoboStage() {
 
   function setPanel(next: boolean) {
     if (next) {
-      const rotation = normalizeAngle(currentAngle());
+      const rotation = normalizeAngle(angleRef.current);
       const rounded = Math.round(rotation * 10) / 10;
       if (rounded !== settingsRef.current.rotation) {
         shownRef.current = Math.round(rounded);
@@ -207,14 +195,11 @@ export function GoboStage() {
   }
 
   function update(patch: Partial<GoboSettings>) {
-    if (patch.spin !== undefined && motionRef.current?.anim) {
-      motionRef.current.anim.playbackRate = patch.spin / 360;
-    }
     const rotation =
       patch.rotation !== undefined
         ? patch.rotation
-        : Math.round(normalizeAngle(currentAngle()) * 10) / 10;
-    angleRef.current = currentAngle();
+        : Math.round(normalizeAngle(angleRef.current) * 10) / 10;
+    if (patch.rotation !== undefined) angleRef.current = patch.rotation;
     shownRef.current = Math.round(rotation);
     const next = { ...settingsRef.current, ...patch, rotation };
     settingsRef.current = next;
@@ -288,11 +273,11 @@ export function GoboStage() {
 
   useEffect(() => {
     let frame = 0;
-    let lastPersist = performance.now();
+    let last = performance.now();
+    let lastPersist = last;
 
     const persistAngle = () => {
-      const rotation = Math.round(normalizeAngle(currentAngle()) * 10) / 10;
-      angleRef.current = currentAngle();
+      const rotation = Math.round(normalizeAngle(angleRef.current) * 10) / 10;
       const next = { ...settingsRef.current, rotation };
       settingsRef.current = next;
       saveSettings(next);
@@ -300,11 +285,12 @@ export function GoboStage() {
     };
 
     const tick = (now: number) => {
+      const dt = Math.min((now - last) / 1000, 0.1);
+      last = now;
       const speed = settingsRef.current.spin;
-      if (speed !== 0) {
-        const angle = currentAngle();
-        angleRef.current = angle;
-        const rotation = Math.round(normalizeAngle(angle) * 10) / 10;
+      if (speed !== 0 && dt > 0) {
+        angleRef.current += speed * dt;
+        const rotation = Math.round(normalizeAngle(angleRef.current) * 10) / 10;
         const shown = Math.round(rotation);
         if (openRef.current && shown !== shownRef.current) {
           shownRef.current = shown;
@@ -319,12 +305,17 @@ export function GoboStage() {
           saveSettings(next);
         }
       }
+      paintFrame();
       frame = requestAnimationFrame(tick);
     };
 
     frame = requestAnimationFrame(tick);
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") persistAngle();
+      if (document.visibilityState === "hidden") {
+        persistAngle();
+        return;
+      }
+      last = performance.now();
     };
     window.addEventListener("pagehide", persistAngle);
     document.addEventListener("visibilitychange", onVisibility);
@@ -337,7 +328,95 @@ export function GoboStage() {
 
   const font = getFont(settings.font);
   const visible = hasVisibleText(settings.text);
-  const outlineWidth = `${(settings.outlineWidth * 0.012).toFixed(4)}em`;
+  const [viewport, setViewport] = useState(() => ({
+    w: typeof window === "undefined" ? 1 : window.innerWidth,
+    h: typeof window === "undefined" ? 1 : window.innerHeight,
+  }));
+
+  useEffect(() => {
+    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const frameKey = [
+    settings.text,
+    settings.font,
+    settings.size,
+    settings.color,
+    settings.outline,
+    settings.outlineWidth,
+    settings.outlineColor,
+    settings.glow,
+    settings.letterSpacing,
+    settings.lineHeight,
+    settings.align,
+    viewport.w,
+    viewport.h,
+  ].join("\u0000");
+
+  useEffect(() => {
+    if (!hasVisibleText(settings.text)) {
+      releaseFrames();
+      return;
+    }
+    const generation = ++buildRef.current;
+    const vmin = Math.min(viewport.w, viewport.h) / 100;
+    const fontPx = settings.size * vmin;
+    const glow = settings.glow / 100;
+    let cancelled = false;
+    void renderGoboFrames(
+      {
+        text: settings.text,
+        color: settings.color,
+        fontStack: font.stack,
+        fontWeight: font.weight,
+        fontPx,
+        letterSpacingEm: settings.letterSpacing,
+        lineHeight: settings.lineHeight,
+        align: settings.align,
+        outline: settings.outline,
+        outlinePx: settings.outline ? settings.outlineWidth * 0.012 * fontPx : 0,
+        outlineColor: settings.outlineColor,
+        glowWidePx: glow * 3.4 * vmin,
+        glowTightPx: glow * 1.1 * vmin,
+        maxWidthPx: viewport.w * 0.92,
+      },
+      (bitmap, cssSize) => {
+        if (cancelled || generation !== buildRef.current || framesRef.current.length > 0) return;
+        cssSizeRef.current = cssSize;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.style.width = `${cssSize}px`;
+        canvas.style.height = `${cssSize}px`;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0);
+      },
+      () => !cancelled && generation === buildRef.current,
+    ).then((set) => {
+      if (cancelled || generation !== buildRef.current) {
+        set.frames.forEach((bitmap) => bitmap.close());
+        return;
+      }
+      const previous = framesRef.current;
+      framesRef.current = set.frames;
+      cssSizeRef.current = set.cssSize;
+      shownFrameRef.current = -1;
+      previous.forEach((bitmap) => bitmap.close());
+      const canvas = canvasRef.current;
+      if (canvas) canvas.dataset.frames = String(set.frames.length);
+      paintFrame();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // frameKey already lists every visual field this raster depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frameKey]);
 
   return (
     <main
@@ -351,28 +430,14 @@ export function GoboStage() {
       }}
     >
       {visible ? (
-        <div
+        <canvas
           id="gobo"
-          ref={bindGobo}
-          className="gobo-spin"
+          ref={bindCanvas}
+          className="gobo-reel"
           data-testid="gobo"
           data-spin={settings.spin}
-        >
-          <GoboText
-            text={settings.text}
-            color={settings.color}
-            fontStack={font.stack}
-            fontWeight={font.weight}
-            size={settings.size}
-            letterSpacing={settings.letterSpacing}
-            lineHeight={settings.lineHeight}
-            align={settings.align}
-            outline={settings.outline}
-            outlineWidth={outlineWidth}
-            outlineColor={settings.outlineColor}
-            glow={glowFilter(settings.glow, settings.color)}
-          />
-        </div>
+          aria-label={settings.text}
+        />
       ) : null}
 
       {open ? (
@@ -610,54 +675,6 @@ export function GoboStage() {
     </main>
   );
 }
-
-const GoboText = memo(function GoboText({
-  text,
-  color,
-  fontStack,
-  fontWeight,
-  size,
-  letterSpacing,
-  lineHeight,
-  align,
-  outline,
-  outlineWidth,
-  outlineColor,
-  glow,
-}: {
-  text: string;
-  color: string;
-  fontStack: string;
-  fontWeight: number;
-  size: number;
-  letterSpacing: number;
-  lineHeight: number;
-  align: TextAlign;
-  outline: boolean;
-  outlineWidth: string;
-  outlineColor: string;
-  glow: string;
-}) {
-  return (
-    <div
-      className="gobo-word"
-      style={{
-        color,
-        fontFamily: fontStack,
-        fontSize: `${size}vmin`,
-        fontWeight,
-        letterSpacing: `${letterSpacing}em`,
-        lineHeight,
-        textAlign: align,
-        WebkitTextStroke: outline ? `${outlineWidth} ${outlineColor}` : "0 transparent",
-        paintOrder: "stroke fill",
-        filter: glow,
-      }}
-    >
-      {text}
-    </div>
-  );
-});
 
 function SliderField({
   id,

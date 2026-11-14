@@ -173,26 +173,15 @@ html:-webkit-full-screen body {
   background: transparent;
 }
 
-.gobo-spin {
+.gobo-reel {
   position: absolute;
   top: 50%;
   left: 50%;
-  translate: -50% -50%;
-  transform-origin: center;
+  display: block;
+  background: transparent;
   pointer-events: none;
   user-select: none;
-}
-
-.gobo-word {
-  width: max-content;
-  max-width: 92vw;
-  margin: 0;
-  padding: 0.08em 0.14em;
-  background: transparent;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: geometricPrecision;
+  transform: translate(-50%, -50%);
 }
 
 .gobo-panel {
