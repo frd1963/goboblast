@@ -1,6 +1,6 @@
 # GoboBlast
 
-A browser page meant to be projected onto a floor or wall. The stage is pure black. The only light is a text gobo you write yourself: words, color, size, font, outline, spacing, alignment, and a soft glow.
+A browser page meant to be projected onto a floor or wall. The stage is pure black. The only light is a text gobo you write yourself: words, color, size, font, outline, spacing, alignment, a soft glow, and rotation.
 
 Size is a percentage of the shorter side of the viewport, so the lettering keeps the same scale when the browser is fullscreen on a projector.
 
@@ -17,6 +17,8 @@ Open [http://localhost:4317](http://localhost:4317).
 
 - Click the black stage, or press a key that is not already assigned, to open the control panel.
 - Esc closes the panel. F toggles browser fullscreen.
+- Drag Rotation left to turn counterclockwise and right to turn clockwise. The middle of the slider is 0°, upright.
+- Left and right arrows add spin in that direction and do not open the panel. Each press stacks 15°/s, opposite presses slow or reverse it, and zero speed holds the current angle.
 - While a text field, menu, or slider in the panel is focused, those keys stay with the control.
 - The panel hides after 4 seconds without a pointer move, key press, or control change. Any of those resets the timer.
 - Settings are saved in this browser and restored on the next visit.
