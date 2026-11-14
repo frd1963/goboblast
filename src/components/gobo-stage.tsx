@@ -17,7 +17,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
-import { PROJECTOR_MAX, PROJECTOR_MIN, projectorTransform } from "@/lib/projector";
+import { PROJECTOR_MAX, PROJECTOR_MIN, floorKeystoneRatio, projectorTransform } from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
   HIDE_AFTER_MS,
@@ -119,6 +119,7 @@ export function GoboStage() {
   const settingsRef = useRef(settings);
   const buildRef = useRef(0);
   const placementRef = useRef("");
+  const inkCacheRef = useRef(new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>());
 
   const bindCanvas = useCallback((node: HTMLCanvasElement | null) => {
     canvasRef.current = node;
@@ -130,24 +131,148 @@ export function GoboStage() {
     const frames = framesRef.current;
     if (!canvas || frames.length === 0) return;
     const index = frameIndex(angleRef.current);
-    if (index === shownFrameRef.current) return;
+    const surface = settingsRef.current.surface;
+    const projector = settingsRef.current.projectorAngle;
+    const warp = surface === "floor" && projector < PROJECTOR_MAX - 0.05;
+    const stamp = warp ? `${surface}:${projector}` : "";
+    if (index === shownFrameRef.current && canvas.dataset.warp === stamp) return;
     const bitmap = frames[index];
     if (!bitmap) return;
+    const cssSize = cssSizeRef.current;
+    if (warp) drawFloorKeystone(canvas, bitmap, index, projector, cssSize);
+    else drawSquare(canvas, bitmap, cssSize);
+    shownFrameRef.current = index;
+    canvas.dataset.warp = stamp;
+    canvas.dataset.rotation = normalizeAngle(angleRef.current).toFixed(2);
+    canvas.dataset.frame = String(index);
+    applyPlacement();
+  }
+
+  function drawSquare(canvas: HTMLCanvasElement, bitmap: ImageBitmap, cssSize: number) {
     if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
       canvas.width = bitmap.width;
       canvas.height = bitmap.height;
     }
-    const cssSize = cssSizeRef.current;
     canvas.style.width = `${cssSize}px`;
     canvas.style.height = `${cssSize}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(bitmap, 0, 0);
-    shownFrameRef.current = index;
-    canvas.dataset.rotation = normalizeAngle(angleRef.current).toFixed(2);
-    canvas.dataset.frame = String(index);
-    applyPlacement();
+  }
+
+  function inkOf(bitmap: ImageBitmap, index: number) {
+    const cached = inkCacheRef.current.get(index);
+    if (cached) return cached;
+    const scratch = document.createElement("canvas");
+    scratch.width = bitmap.width;
+    scratch.height = bitmap.height;
+    const ctx = scratch.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return { minX: 0, maxX: bitmap.width - 1, minY: 0, maxY: bitmap.height - 1 };
+    ctx.drawImage(bitmap, 0, 0);
+    const { data, width, height } = ctx.getImageData(0, 0, scratch.width, scratch.height);
+    let minX = width;
+    let maxX = -1;
+    let minY = height;
+    let maxY = -1;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (data[(y * width + x) * 4 + 3] <= 20) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    const bounds =
+      maxX < 0
+        ? { minX: 0, maxX: width - 1, minY: 0, maxY: height - 1 }
+        : { minX, maxX, minY, maxY };
+    inkCacheRef.current.set(index, bounds);
+    return bounds;
+  }
+
+  function drawFloorKeystone(
+    canvas: HTMLCanvasElement,
+    bitmap: ImageBitmap,
+    index: number,
+    angle: number,
+    cssSize: number,
+  ) {
+    const ratio = Math.min(0.999, Math.max(0.05, floorKeystoneRatio(angle)));
+    const { minX, maxX, minY, maxY } = inkOf(bitmap, index);
+    const srcW = Math.max(1, maxX - minX + 1);
+    const srcH = Math.max(1, maxY - minY + 1);
+    const outScale = 2;
+    const destH = Math.max(1, Math.round(srcH * outScale));
+    const depth = (s: number) => 1 + s * (1 / ratio - 1);
+    const depthMid = depth(0.5);
+    const widthAt = (s: number) => ((srcW * depthMid) / depth(s)) * outScale;
+    const heights = new Array<number>(srcH);
+    let weightSum = 0;
+    for (let i = 0; i < srcH; i += 1) {
+      const s = 1 - (i + 0.5) / srcH;
+      const weight = widthAt(s) ** 2;
+      heights[i] = weight;
+      weightSum += weight;
+    }
+    for (let i = 0; i < srcH; i += 1) heights[i] = (heights[i] / weightSum) * destH;
+    const prefix = new Array<number>(srcH + 1);
+    prefix[0] = 0;
+    for (let i = 0; i < srcH; i += 1) prefix[i + 1] = prefix[i] + heights[i];
+    const midSrc = srcH / 2;
+    const midIndex = Math.min(srcH - 1, Math.floor(midSrc));
+    const midDest = prefix[midIndex] + heights[midIndex] * (midSrc - midIndex);
+    const pad = 2 * outScale;
+    const halfH = Math.ceil(Math.max(midDest, prefix[srcH] - midDest) + pad);
+    const halfW = Math.ceil(widthAt(0) / 2 + pad);
+    canvas.width = Math.max(2, halfW * 2);
+    canvas.height = Math.max(2, halfH * 2);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const cx = canvas.width / 2 + ((minX + maxX) / 2 - bitmap.width / 2) * outScale;
+    const cy = canvas.height / 2 + ((minY + maxY) / 2 - bitmap.height / 2) * outScale;
+    const shift = cy - midDest;
+    const sourceRow = (destY: number) => {
+      const y = Math.min(prefix[srcH] - 0.0001, Math.max(0, destY));
+      let lo = 0;
+      let hi = srcH - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (prefix[mid + 1] < y) lo = mid + 1;
+        else hi = mid;
+      }
+      const span = heights[lo] || 1;
+      const frac = Math.min(1, Math.max(0, (y - prefix[lo]) / span));
+      return lo + frac;
+    };
+    for (let y = 0; y < destH; y += 1) {
+      const row0 = sourceRow(y);
+      const row1 = sourceRow(y + 1);
+      const s = Math.min(1, Math.max(0, 1 - (row0 + row1) / 2 / srcH));
+      const dw = widthAt(s);
+      ctx.drawImage(
+        bitmap,
+        minX,
+        minY + row0,
+        srcW,
+        Math.max(0.35, row1 - row0),
+        cx - dw / 2,
+        y + shift,
+        dw,
+        1,
+      );
+    }
+    let cssPerPx = cssSize / bitmap.width / outScale;
+    const maxW = Math.max(1, window.innerWidth - 56);
+    const maxH = Math.max(1, window.innerHeight - 56);
+    const fit = Math.min(1, maxW / (canvas.width * cssPerPx), maxH / (canvas.height * cssPerPx));
+    cssPerPx *= Number.isFinite(fit) && fit > 0 ? fit : 1;
+    canvas.style.width = `${canvas.width * cssPerPx}px`;
+    canvas.style.height = `${canvas.height * cssPerPx}px`;
   }
 
   function applyPlacement() {
@@ -171,6 +296,7 @@ export function GoboStage() {
     framesRef.current.forEach((frame) => frame.close());
     framesRef.current = [];
     shownFrameRef.current = -1;
+    inkCacheRef.current.clear();
   }
 
   function clearHideTimer() {
@@ -363,7 +489,10 @@ export function GoboStage() {
   }, []);
 
   useEffect(() => {
-    applyPlacement();
+    shownFrameRef.current = -1;
+    paintFrame();
+    // Redraws through refs when the throw changes. The spin loop is separate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.projectorAngle, settings.surface, viewport.w, viewport.h]);
 
   const frameKey = [
@@ -433,6 +562,7 @@ export function GoboStage() {
       framesRef.current = set.frames;
       cssSizeRef.current = set.cssSize;
       shownFrameRef.current = -1;
+      inkCacheRef.current.clear();
       previous.forEach((bitmap) => bitmap.close());
       const canvas = canvasRef.current;
       if (canvas) canvas.dataset.frames = String(set.frames.length);
