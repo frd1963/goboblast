@@ -34,8 +34,8 @@ export type GoboSettings = {
   /** Degrees per second. The slider sets this directly. Positive is clockwise. */
   spin: number;
   /**
-   * Projector pitch off the surface normal, in degrees.
-   * 0 aims straight (horizontal beam, vertical surface). Positive pitches up.
+   * Beam depression toward the floor, in degrees.
+   * 0 is a horizontal beam. 90 points straight down.
    */
   projectorAngle: number;
 };
