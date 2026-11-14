@@ -17,8 +17,8 @@ Open [http://localhost:4317](http://localhost:4317).
 
 - Click the black stage, or press a key that is not already assigned, to open the control panel.
 - Esc closes the panel. F toggles browser fullscreen.
-- Drag Rotation left to turn counterclockwise and right to turn clockwise. The middle of the slider is 0°, upright.
-- Left and right arrows add spin in that direction and do not open the panel. Each press stacks 15°/s, opposite presses slow or reverse it, and zero speed holds the current angle.
+- Drag Rotation left of center for a counterclockwise spin and right of center for a clockwise spin. The middle is 0°/s, so the gobo holds its angle. The slider sets that speed directly, up to 180°/s.
+- Left and right arrows add 15°/s on top of the slider and do not open the panel. Opposite presses slow the spin and can reverse it.
 - While a text field, menu, or slider in the panel is focused, those keys stay with the control.
 - The panel hides after 4 seconds without a pointer move, key press, or control change. Any of those resets the timer.
 - Settings are saved in this browser and restored on the next visit.

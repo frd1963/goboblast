@@ -19,8 +19,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
   HIDE_AFTER_MS,
-  ROTATION_MAX,
-  ROTATION_MIN,
   SPIN_MAX,
   SPIN_MIN,
   SPIN_STEP,
@@ -88,20 +86,19 @@ function paintAngle(node: HTMLDivElement | null, angle: number) {
   return normalized;
 }
 
-function rotationSliderActive() {
-  const element = document.activeElement;
-  return element instanceof Element && Boolean(element.closest("#gobo-rotation"));
-}
-
 function formatDegrees(value: number) {
-  const rounded = Math.round(value);
-  return `${rounded}°`;
+  return `${Math.round(value)}°`;
 }
 
-function spinCaption(spin: number) {
-  if (spin === 0) return "Holding this angle";
-  const rate = Number.isInteger(spin) ? String(Math.abs(spin)) : Math.abs(spin).toFixed(1);
-  return `${rate}°/s ${spin > 0 ? "clockwise" : "counterclockwise"}`;
+function formatSpeed(spin: number) {
+  const rounded = Math.round(spin);
+  return `${rounded}°/s`;
+}
+
+function angleCaption(rotation: number, spin: number) {
+  const angle = formatDegrees(rotation);
+  if (spin === 0) return `Holding ${angle}`;
+  return angle;
 }
 
 function glowFilter(strength: number, color: string) {
@@ -129,7 +126,6 @@ export function GoboStage() {
   const goboRef = useRef<HTMLDivElement>(null);
   const angleRef = useRef(settings.rotation);
   const shownRef = useRef(Math.round(settings.rotation));
-  const draggingAngle = useRef(false);
   const settingsRef = useRef(settings);
 
   const bindGobo = useCallback((node: HTMLDivElement | null) => {
@@ -139,18 +135,6 @@ export function GoboStage() {
 
   function applyAngle(angle: number) {
     angleRef.current = paintAngle(goboRef.current, angle);
-  }
-
-  function beginAngleDrag() {
-    if (draggingAngle.current) return;
-    draggingAngle.current = true;
-    const stop = () => {
-      draggingAngle.current = false;
-      window.removeEventListener("pointerup", stop);
-      window.removeEventListener("pointercancel", stop);
-    };
-    window.addEventListener("pointerup", stop);
-    window.addEventListener("pointercancel", stop);
   }
 
   function clearHideTimer() {
@@ -289,8 +273,7 @@ export function GoboStage() {
       const dt = Math.min((now - last) / 1000, 0.25);
       last = now;
       const speed = settingsRef.current.spin;
-      const held = draggingAngle.current || rotationSliderActive();
-      if (speed !== 0 && !held && dt > 0) {
+      if (speed !== 0 && dt > 0) {
         applyAngle(angleRef.current + speed * dt);
         const rotation = Math.round(normalizeAngle(angleRef.current) * 10) / 10;
         const shown = Math.round(rotation);
@@ -449,28 +432,24 @@ export function GoboStage() {
             />
 
             <div className="gobo-field">
-              <Label htmlFor="gobo-rotation" className="gobo-field-label">
+              <Label htmlFor="gobo-spin" className="gobo-field-label">
                 Rotation
-                <span>{formatDegrees(settings.rotation)}</span>
+                <span>{formatSpeed(settings.spin)}</span>
               </Label>
-              <div className="gobo-bipolar" onPointerDown={beginAngleDrag}>
+              <div className="gobo-bipolar">
                 <span className="gobo-bipolar-zero" aria-hidden="true" />
                 <Slider
-                  id="gobo-rotation"
-                  min={ROTATION_MIN}
-                  max={ROTATION_MAX}
+                  id="gobo-spin"
+                  min={SPIN_MIN}
+                  max={SPIN_MAX}
                   step={1}
-                  value={[Math.round(settings.rotation)]}
-                  aria-label="Rotation"
-                  onValueChange={(next) => {
-                    const rotation = sliderNumber(next);
-                    applyAngle(rotation);
-                    update({ rotation });
-                  }}
+                  value={[Math.round(settings.spin)]}
+                  aria-label="Rotation speed"
+                  onValueChange={(next) => update({ spin: sliderNumber(next) })}
                 />
               </div>
-              <p className="gobo-speed" data-testid="spin-readout">
-                {spinCaption(settings.spin)}
+              <p className="gobo-speed" data-testid="angle-readout">
+                {angleCaption(settings.rotation, settings.spin)}
               </p>
             </div>
 
@@ -591,10 +570,11 @@ export function GoboStage() {
 
             <p className="gobo-hint">
               Click the stage or press any unassigned key to open this panel. Esc closes it. F toggles
-              fullscreen. Left and right arrows add {SPIN_STEP}°/s of counterclockwise or clockwise
-              spin, up to {SPIN_MAX}°/s. Opposite presses slow it and can reverse it. At zero speed
-              the gobo holds its angle. The panel hides after 4 seconds of quiet, and every change is
-              kept in this browser. Clear the text for a pure black frame.
+              fullscreen. Rotation sets the spin directly: the middle is stopped, left is
+              counterclockwise, and right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add{" "}
+              {SPIN_STEP}°/s on top of that and can reverse it. At zero speed the gobo holds its angle.
+              The panel hides after 4 seconds of quiet, and every change is kept in this browser. Clear
+              the text for a pure black frame.
             </p>
           </div>
         </div>

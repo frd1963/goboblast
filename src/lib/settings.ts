@@ -5,11 +5,11 @@ export const STORAGE_KEY = "goboblast-settings";
 /** Panel closes after this much quiet time. */
 export const HIDE_AFTER_MS = 4000;
 
-/** Slider ends. Center is 0° and upright. Negative is counterclockwise. */
+/** Stored angle wraps into this range. 0 is upright. Positive is clockwise. */
 export const ROTATION_MIN = -180;
 export const ROTATION_MAX = 180;
 
-/** Degrees per second added by each Left (negative) or Right (positive) press. */
+/** Speed slider ends, in degrees per second. Center is stopped. */
 export const SPIN_STEP = 15;
 export const SPIN_MIN = -180;
 export const SPIN_MAX = 180;
@@ -28,9 +28,9 @@ export type GoboSettings = {
   lineHeight: number;
   align: TextAlign;
   glow: number;
-  /** Degrees, -180 to 180. 0 is upright. Positive is clockwise. */
+  /** Degrees the gobo has reached. 0 is upright. Positive is clockwise. */
   rotation: number;
-  /** Degrees per second. Positive is clockwise, negative is counterclockwise. */
+  /** Degrees per second. The slider sets this directly. Positive is clockwise. */
   spin: number;
 };
 
