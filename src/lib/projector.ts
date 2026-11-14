@@ -1,32 +1,35 @@
 /**
- * Beam angle, in degrees. 0 applies no skew. 90 is full keystone.
- * On the floor, 0 is a horizontal beam and 90 points straight down.
- * On a wall, 0 aims straight at the surface and 90 is pitched fully off that aim.
- * Either way the far edge is the top of the gobo, and it narrows so the mark lands square.
+ * Beam angle, in degrees, from 0 to 90.
+ * Floor: 0 is a horizontal beam and gets the full keystone. 90 points straight down and has no skew.
+ * Wall: 0 aims straight at the surface with no skew. 90 is pitched fully off that aim.
+ * The far edge is the top of the gobo. It narrows so the mark lands square.
  */
 export const PROJECTOR_MIN = 0;
 export const PROJECTOR_MAX = 90;
 
-/** Perspective tilt used when the beam is straight down. Short of edge-on, so the gobo stays visible. */
+/** Perspective tilt at full keystone. Short of edge-on, so the gobo stays visible. */
 const FULL_TILT_DEGREES = 72;
 
 const FIT_MARGIN_PX = 28;
 
 /**
- * Pre-warp for a beam depressed by `angleDeg` onto the floor.
- * The top of the gobo is the far edge and narrows as the beam aims further down.
- * Zero is only the centering translation. The result stays on the stage.
+ * Pre-warp for `angleDeg` on `surface`.
+ * Floor skew falls as the beam aims down. Wall skew rises as the beam pitches off the wall.
+ * Zero skew is only the centering translation. The result stays on the stage.
  */
 export function projectorTransform(
   angleDeg: number,
   cssSize: number,
   viewportWidth: number,
   viewportHeight: number,
+  surface: "floor" | "wall" = "floor",
 ) {
   const angle = Number.isFinite(angleDeg) ? Math.min(PROJECTOR_MAX, Math.max(PROJECTOR_MIN, angleDeg)) : 0;
-  if (angle < 0.05 || cssSize <= 0) return "translate(-50%, -50%)";
+  if (cssSize <= 0) return "translate(-50%, -50%)";
+  const skew = surface === "floor" ? (PROJECTOR_MAX - angle) / PROJECTOR_MAX : angle / PROJECTOR_MAX;
+  const tilt = skew * FULL_TILT_DEGREES;
+  if (tilt < 0.05) return "translate(-50%, -50%)";
 
-  const tilt = (angle / PROJECTOR_MAX) * FULL_TILT_DEGREES;
   const rad = (tilt * Math.PI) / 180;
   const distance = Math.max(cssSize * 0.7, 1);
   const half = cssSize / 2;

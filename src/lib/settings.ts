@@ -36,7 +36,7 @@ export type GoboSettings = {
   spin: number;
   /**
    * Beam angle in degrees, 0 to 90.
-   * On the floor, 0 is horizontal and 90 points straight down.
+   * On the floor, 0 is a horizontal beam with full keystone, and 90 points straight down with none.
    * On a wall, 0 aims straight at the surface and higher values pitch off that aim.
    */
   projectorAngle: number;

@@ -158,6 +158,7 @@ export function GoboStage() {
       cssSizeRef.current,
       window.innerWidth,
       window.innerHeight,
+      settingsRef.current.surface,
     );
     canvas.dataset.projector = String(settingsRef.current.projectorAngle);
     canvas.dataset.surface = settingsRef.current.surface;
@@ -614,7 +615,7 @@ export function GoboStage() {
               />
               <p className="gobo-speed">
                 {settings.surface === "floor"
-                  ? "0° is a horizontal beam. 90° points straight down at the floor."
+                  ? "0° is a horizontal beam, with the full floor keystone. 90° points straight down and has no skew."
                   : "0° aims straight at the wall. Raising it pitches the projector off that aim."}
               </p>
             </div>
@@ -739,9 +740,9 @@ export function GoboStage() {
               fullscreen. Rotation sets the spin directly: the middle is stopped, left is
               counterclockwise, and right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add{" "}
               {SPIN_STEP}°/s on top of that and can reverse it. At zero speed the gobo holds its angle.
-              Floor runs from a horizontal beam at 0° to straight down at 90°. Wall starts aimed straight
-              at the surface, and a higher angle pitches off that aim. Either way the gobo is pre-warped
-              so it lands square. The panel hides after 4 seconds of
+              On the floor, a horizontal beam at 0° gets the full keystone, and straight down at 90° has
+              none. On a wall, 0° aims straight with no skew, and a higher angle pitches off that aim.
+              The panel hides after 4 seconds of
               quiet, and every change is kept in this browser. Clear the text for a pure black frame.
             </p>
           </div>
