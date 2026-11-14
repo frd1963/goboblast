@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -81,8 +81,8 @@ function sliderNumber(value: number | readonly number[]) {
 function paintAngle(node: HTMLDivElement | null, angle: number) {
   const normalized = normalizeAngle(angle);
   if (!node) return normalized;
-  node.style.setProperty("--gobo-rotation", `${normalized}deg`);
-  node.dataset.rotation = normalized.toFixed(2);
+  node.style.transform = `translate3d(-50%, -50%, 0) rotate(${normalized}deg)`;
+  node.dataset.rotation = normalized.toFixed(3);
   return normalized;
 }
 
@@ -133,9 +133,9 @@ export function GoboStage() {
     paintAngle(node, angleRef.current);
   }, []);
 
-  function applyAngle(angle: number) {
-    angleRef.current = paintAngle(goboRef.current, angle);
-  }
+  useLayoutEffect(() => {
+    paintAngle(goboRef.current, angleRef.current);
+  });
 
   function clearHideTimer() {
     if (hideTimer.current !== null) {
@@ -270,11 +270,12 @@ export function GoboStage() {
     };
 
     const tick = (now: number) => {
-      const dt = Math.min((now - last) / 1000, 0.25);
+      const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
       const speed = settingsRef.current.spin;
       if (speed !== 0 && dt > 0) {
-        applyAngle(angleRef.current + speed * dt);
+        angleRef.current += speed * dt;
+        paintAngle(goboRef.current, angleRef.current);
         const rotation = Math.round(normalizeAngle(angleRef.current) * 10) / 10;
         const shown = Math.round(rotation);
         if (openRef.current && shown !== shownRef.current) {
@@ -295,7 +296,11 @@ export function GoboStage() {
 
     frame = requestAnimationFrame(tick);
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") persistAngle();
+      if (document.visibilityState === "hidden") {
+        persistAngle();
+        return;
+      }
+      last = performance.now();
     };
     window.addEventListener("pagehide", persistAngle);
     document.addEventListener("visibilitychange", onVisibility);
@@ -325,25 +330,24 @@ export function GoboStage() {
         <div
           id="gobo"
           ref={bindGobo}
-          className="gobo-word"
+          className="gobo-spin"
           data-testid="gobo"
           data-spin={settings.spin}
-          style={{
-            color: settings.color,
-            fontFamily: font.stack,
-            fontSize: `${settings.size}vmin`,
-            fontWeight: font.weight,
-            letterSpacing: `${settings.letterSpacing}em`,
-            lineHeight: settings.lineHeight,
-            textAlign: settings.align,
-            WebkitTextStroke: settings.outline
-              ? `${outlineWidth} ${settings.outlineColor}`
-              : "0 transparent",
-            paintOrder: "stroke fill",
-            filter: glowFilter(settings.glow, settings.color),
-          }}
         >
-          {settings.text}
+          <GoboText
+            text={settings.text}
+            color={settings.color}
+            fontStack={font.stack}
+            fontWeight={font.weight}
+            size={settings.size}
+            letterSpacing={settings.letterSpacing}
+            lineHeight={settings.lineHeight}
+            align={settings.align}
+            outline={settings.outline}
+            outlineWidth={outlineWidth}
+            outlineColor={settings.outlineColor}
+            glow={glowFilter(settings.glow, settings.color)}
+          />
         </div>
       ) : null}
 
@@ -582,6 +586,54 @@ export function GoboStage() {
     </main>
   );
 }
+
+const GoboText = memo(function GoboText({
+  text,
+  color,
+  fontStack,
+  fontWeight,
+  size,
+  letterSpacing,
+  lineHeight,
+  align,
+  outline,
+  outlineWidth,
+  outlineColor,
+  glow,
+}: {
+  text: string;
+  color: string;
+  fontStack: string;
+  fontWeight: number;
+  size: number;
+  letterSpacing: number;
+  lineHeight: number;
+  align: TextAlign;
+  outline: boolean;
+  outlineWidth: string;
+  outlineColor: string;
+  glow: string;
+}) {
+  return (
+    <div
+      className="gobo-word"
+      style={{
+        color,
+        fontFamily: fontStack,
+        fontSize: `${size}vmin`,
+        fontWeight,
+        letterSpacing: `${letterSpacing}em`,
+        lineHeight,
+        textAlign: align,
+        WebkitTextStroke: outline ? `${outlineWidth} ${outlineColor}` : "0 transparent",
+        paintOrder: "stroke fill",
+        filter: glow,
+      }}
+    >
+      {text}
+    </div>
+  );
+});
 
 function SliderField({
   id,

@@ -173,20 +173,25 @@ html:-webkit-full-screen body {
   background: transparent;
 }
 
-.gobo-word {
+.gobo-spin {
+  /* Layer that rotates without repainting the glyphs. */
   position: absolute;
   top: 50%;
   left: 50%;
+  transform-origin: center;
+  will-change: transform;
+  pointer-events: none;
+  user-select: none;
+}
+
+.gobo-word {
   width: max-content;
   max-width: 92vw;
   margin: 0;
   padding: 0.08em 0.14em;
   background: transparent;
-  pointer-events: none;
-  user-select: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  transform: translate(-50%, -50%) rotate(var(--gobo-rotation, 0deg));
 }
 
 .gobo-panel {
