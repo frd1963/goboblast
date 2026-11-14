@@ -16,7 +16,7 @@ const FIT_MARGIN_PX = 28;
  * Half the floor gobo, as a fraction of the distance from the point under the
  * projector to the gobo's center. This is the throw that sets the keystone.
  */
-const FLOOR_THROW = 0.4;
+const FLOOR_THROW = 0.55;
 
 /**
  * Far-edge width divided by near-edge width for a beam depressed by `angleDeg`.
@@ -32,7 +32,54 @@ export function floorKeystoneRatio(angleDeg: number) {
 }
 
 /**
- * Wall keystone, as a CSS transform. Floor keystone is painted into the gobo from the throw angle.
+ * Perspective transform for a floor gobo that has already been cropped to its ink.
+ * 90° is square. Lower angles tip the beam so the top (far) edge narrows and the
+ * bottom (near) edge widens by the throw ratio. The crop is what makes the letters
+ * themselves keystone.
+ */
+export function floorThrowTransform(
+  angleDeg: number,
+  cssWidth: number,
+  cssHeight: number,
+  offsetX: number,
+  offsetY: number,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  const center = `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`;
+  const ratio = floorKeystoneRatio(angleDeg);
+  if (cssWidth <= 0 || cssHeight <= 0 || ratio > 0.985) return center;
+  const k = (1 - ratio) / (1 + ratio);
+  const tilt = Math.min(32, (1 - ratio) * 58);
+  const rad = (tilt * Math.PI) / 180;
+  const sin = Math.sin(rad);
+  const cos = Math.cos(rad);
+  const distance = Math.max(1, ((cssHeight / 2) * sin) / Math.max(k, 0.0001));
+  const project = (x: number, y: number, fit: number) => {
+    const z = y * fit * sin;
+    const scale = (distance * fit) / (distance * fit - z);
+    return [x * fit * scale, y * fit * cos * scale] as const;
+  };
+  const corners = [
+    [-cssWidth / 2, -cssHeight / 2],
+    [cssWidth / 2, -cssHeight / 2],
+    [-cssWidth / 2, cssHeight / 2],
+    [cssWidth / 2, cssHeight / 2],
+  ];
+  const limitX = Math.max(1, viewportWidth / 2 - FIT_MARGIN_PX);
+  const limitY = Math.max(1, viewportHeight / 2 - FIT_MARGIN_PX);
+  let fit = 1;
+  for (const [x, y] of corners) {
+    const [px, py] = project(x, y, 1);
+    fit = Math.min(fit, limitX / (Math.abs(px) + Math.abs(offsetX)), limitY / (Math.abs(py) + Math.abs(offsetY)));
+  }
+  if (!Number.isFinite(fit) || fit <= 0) fit = 1;
+  fit = Math.min(1, fit);
+  return `${center} perspective(${distance * fit}px) rotateX(${tilt}deg) scale(${fit})`;
+}
+
+/**
+ * Wall keystone, as a CSS transform. Floor keystone is a throw-angle perspective on the gobo itself.
  * Zero skew is only the centering translation. The result stays on the stage.
  */
 export function projectorTransform(

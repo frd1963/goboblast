@@ -17,7 +17,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
-import { PROJECTOR_MAX, PROJECTOR_MIN, floorKeystoneRatio, projectorTransform } from "@/lib/projector";
+import { PROJECTOR_MAX, PROJECTOR_MIN, floorThrowTransform, projectorTransform } from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
   HIDE_AFTER_MS,
@@ -119,6 +119,7 @@ export function GoboStage() {
   const settingsRef = useRef(settings);
   const buildRef = useRef(0);
   const placementRef = useRef("");
+  const floorBoxRef = useRef({ w: 0, h: 0, ox: 0, oy: 0 });
   const inkCacheRef = useRef(new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>());
 
   const bindCanvas = useCallback((node: HTMLCanvasElement | null) => {
@@ -139,7 +140,7 @@ export function GoboStage() {
     const bitmap = frames[index];
     if (!bitmap) return;
     const cssSize = cssSizeRef.current;
-    if (warp) drawFloorKeystone(canvas, bitmap, index, projector, cssSize);
+    if (warp) drawFloorKeystone(canvas, bitmap, index, cssSize);
     else drawSquare(canvas, bitmap, cssSize);
     shownFrameRef.current = index;
     canvas.dataset.warp = stamp;
@@ -155,6 +156,7 @@ export function GoboStage() {
     }
     canvas.style.width = `${cssSize}px`;
     canvas.style.height = `${cssSize}px`;
+    floorBoxRef.current = { w: cssSize, h: cssSize, ox: 0, oy: 0 };
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -196,95 +198,60 @@ export function GoboStage() {
     canvas: HTMLCanvasElement,
     bitmap: ImageBitmap,
     index: number,
-    angle: number,
     cssSize: number,
   ) {
-    const ratio = Math.min(0.999, Math.max(0.05, floorKeystoneRatio(angle)));
     const { minX, maxX, minY, maxY } = inkOf(bitmap, index);
-    const srcW = Math.max(1, maxX - minX + 1);
-    const srcH = Math.max(1, maxY - minY + 1);
-    const outScale = 2;
-    const destH = Math.max(1, Math.round(srcH * outScale));
-    const depth = (s: number) => 1 + s * (1 / ratio - 1);
-    const depthMid = depth(0.5);
-    const widthAt = (s: number) => ((srcW * depthMid) / depth(s)) * outScale;
-    const heights = new Array<number>(srcH);
-    let weightSum = 0;
-    for (let i = 0; i < srcH; i += 1) {
-      const s = 1 - (i + 0.5) / srcH;
-      const weight = widthAt(s) ** 2;
-      heights[i] = weight;
-      weightSum += weight;
+    const pad = 4;
+    const srcX = Math.max(0, minX - pad);
+    const srcY = Math.max(0, minY - pad);
+    const srcW = Math.min(bitmap.width - srcX, maxX - minX + 1 + pad * 2);
+    const srcH = Math.min(bitmap.height - srcY, maxY - minY + 1 + pad * 2);
+    if (canvas.width !== srcW || canvas.height !== srcH) {
+      canvas.width = srcW;
+      canvas.height = srcH;
     }
-    for (let i = 0; i < srcH; i += 1) heights[i] = (heights[i] / weightSum) * destH;
-    const prefix = new Array<number>(srcH + 1);
-    prefix[0] = 0;
-    for (let i = 0; i < srcH; i += 1) prefix[i + 1] = prefix[i] + heights[i];
-    const midSrc = srcH / 2;
-    const midIndex = Math.min(srcH - 1, Math.floor(midSrc));
-    const midDest = prefix[midIndex] + heights[midIndex] * (midSrc - midIndex);
-    const pad = 2 * outScale;
-    const halfH = Math.ceil(Math.max(midDest, prefix[srcH] - midDest) + pad);
-    const halfW = Math.ceil(widthAt(0) / 2 + pad);
-    canvas.width = Math.max(2, halfW * 2);
-    canvas.height = Math.max(2, halfH * 2);
+    const cssPerPx = cssSize / bitmap.width;
+    const cssW = srcW * cssPerPx;
+    const cssH = srcH * cssPerPx;
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+    const inkCx = srcX + srcW / 2;
+    const inkCy = srcY + srcH / 2;
+    floorBoxRef.current = {
+      w: cssW,
+      h: cssH,
+      ox: (inkCx - bitmap.width / 2) * cssPerPx,
+      oy: (inkCy - bitmap.height / 2) * cssPerPx,
+    };
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const cx = canvas.width / 2 + ((minX + maxX) / 2 - bitmap.width / 2) * outScale;
-    const cy = canvas.height / 2 + ((minY + maxY) / 2 - bitmap.height / 2) * outScale;
-    const shift = cy - midDest;
-    const sourceRow = (destY: number) => {
-      const y = Math.min(prefix[srcH] - 0.0001, Math.max(0, destY));
-      let lo = 0;
-      let hi = srcH - 1;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (prefix[mid + 1] < y) lo = mid + 1;
-        else hi = mid;
-      }
-      const span = heights[lo] || 1;
-      const frac = Math.min(1, Math.max(0, (y - prefix[lo]) / span));
-      return lo + frac;
-    };
-    for (let y = 0; y < destH; y += 1) {
-      const row0 = sourceRow(y);
-      const row1 = sourceRow(y + 1);
-      const s = Math.min(1, Math.max(0, 1 - (row0 + row1) / 2 / srcH));
-      const dw = widthAt(s);
-      ctx.drawImage(
-        bitmap,
-        minX,
-        minY + row0,
-        srcW,
-        Math.max(0.35, row1 - row0),
-        cx - dw / 2,
-        y + shift,
-        dw,
-        1,
-      );
-    }
-    let cssPerPx = cssSize / bitmap.width / outScale;
-    const maxW = Math.max(1, window.innerWidth - 56);
-    const maxH = Math.max(1, window.innerHeight - 56);
-    const fit = Math.min(1, maxW / (canvas.width * cssPerPx), maxH / (canvas.height * cssPerPx));
-    cssPerPx *= Number.isFinite(fit) && fit > 0 ? fit : 1;
-    canvas.style.width = `${canvas.width * cssPerPx}px`;
-    canvas.style.height = `${canvas.height * cssPerPx}px`;
+    ctx.drawImage(bitmap, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
   }
 
   function applyPlacement() {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const next = projectorTransform(
-      settingsRef.current.projectorAngle,
-      cssSizeRef.current,
-      window.innerWidth,
-      window.innerHeight,
-      settingsRef.current.surface,
-    );
+    const surface = settingsRef.current.surface;
+    const box = floorBoxRef.current;
+    const next =
+      surface === "floor"
+        ? floorThrowTransform(
+            settingsRef.current.projectorAngle,
+            box.w,
+            box.h,
+            box.ox,
+            box.oy,
+            window.innerWidth,
+            window.innerHeight,
+          )
+        : projectorTransform(
+            settingsRef.current.projectorAngle,
+            cssSizeRef.current,
+            window.innerWidth,
+            window.innerHeight,
+            surface,
+          );
     canvas.dataset.projector = String(settingsRef.current.projectorAngle);
     canvas.dataset.surface = settingsRef.current.surface;
     if (placementRef.current === next) return;
@@ -352,6 +319,10 @@ export function GoboStage() {
     settingsRef.current = next;
     setSettings(next);
     saveSettings(next);
+    if (patch.projectorAngle !== undefined || patch.surface !== undefined) {
+      shownFrameRef.current = -1;
+      paintFrame();
+    }
     if (openRef.current) scheduleHide();
   }
 
