@@ -16,8 +16,16 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
-import { PROJECTOR_MAX, PROJECTOR_MIN, floorThrowTransform, projectorTransform } from "@/lib/projector";
+import { FRAME_STEP_DEGREES, frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
+import {
+  PROJECTOR_MAX,
+  PROJECTOR_MIN,
+  floorProjectLocals,
+  floorSteadyScale,
+  floorThrowTransform,
+  projectorTransform,
+  type GoboMark,
+} from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
   HIDE_AFTER_MS,
@@ -120,7 +128,11 @@ export function GoboStage() {
   const buildRef = useRef(0);
   const placementRef = useRef("");
   const floorBoxRef = useRef({ w: 0, h: 0, ox: 0, oy: 0 });
-  const inkCacheRef = useRef(new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>());
+  const markRef = useRef<GoboMark>({ width: 0, height: 0, rotation: 0, centerX: 0, centerY: 0 });
+  const inkCacheRef = useRef(
+    new Map<number, { minX: number; maxX: number; minY: number; maxY: number; outline: readonly (readonly [number, number])[] }>(),
+  );
+  const floorFitRef = useRef<{ key: string; refSpan: number; shrink: number } | null>(null);
 
   const bindCanvas = useCallback((node: HTMLCanvasElement | null) => {
     canvasRef.current = node;
@@ -146,6 +158,7 @@ export function GoboStage() {
     canvas.dataset.warp = stamp;
     canvas.dataset.rotation = normalizeAngle(angleRef.current).toFixed(2);
     canvas.dataset.frame = String(index);
+    markRef.current = { ...markRef.current, rotation: index * FRAME_STEP_DEGREES };
     applyPlacement();
   }
 
@@ -170,7 +183,14 @@ export function GoboStage() {
     scratch.width = bitmap.width;
     scratch.height = bitmap.height;
     const ctx = scratch.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return { minX: 0, maxX: bitmap.width - 1, minY: 0, maxY: bitmap.height - 1 };
+    const empty = {
+      minX: 0,
+      maxX: bitmap.width - 1,
+      minY: 0,
+      maxY: bitmap.height - 1,
+      outline: [] as readonly (readonly [number, number])[],
+    };
+    if (!ctx) return empty;
     ctx.drawImage(bitmap, 0, 0);
     const { data, width, height } = ctx.getImageData(0, 0, scratch.width, scratch.height);
     let minX = width;
@@ -186,12 +206,102 @@ export function GoboStage() {
         if (y > maxY) maxY = y;
       }
     }
-    const bounds =
-      maxX < 0
-        ? { minX: 0, maxX: width - 1, minY: 0, maxY: height - 1 }
-        : { minX, maxX, minY, maxY };
+    if (maxX < 0) {
+      inkCacheRef.current.set(index, empty);
+      return empty;
+    }
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const bins = 32;
+    const best: ({ x: number; y: number; r2: number } | undefined)[] = new Array(bins);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (data[(y * width + x) * 4 + 3] <= 20) continue;
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const r2 = dx * dx + dy * dy;
+        const bin = Math.round(((Math.atan2(dy, dx) + Math.PI) / (Math.PI * 2)) * (bins - 1)) % bins;
+        const previous = best[bin];
+        if (!previous || r2 > previous.r2) best[bin] = { x: dx, y: dy, r2 };
+      }
+    }
+    const bounds = {
+      minX,
+      maxX,
+      minY,
+      maxY,
+      outline: best
+        .filter((point): point is { x: number; y: number; r2: number } => point !== undefined)
+        .map((point) => [point.x, point.y] as const),
+    };
     inkCacheRef.current.set(index, bounds);
     return bounds;
+  }
+
+  function markFromFrame(bitmap: ImageBitmap, cssPerPx: number): GoboMark {
+    const base = inkOf(bitmap, 0);
+    const centerPx = (base.minX + base.maxX) / 2;
+    const centerPy = (base.minY + base.maxY) / 2;
+    return {
+      width: Math.max(1, base.maxX - base.minX + 1) * cssPerPx,
+      height: Math.max(1, base.maxY - base.minY + 1) * cssPerPx,
+      rotation: frameIndex(angleRef.current) * FRAME_STEP_DEGREES,
+      centerX: (centerPx - bitmap.width / 2) * cssPerPx,
+      centerY: (centerPy - bitmap.height / 2) * cssPerPx,
+      outline: base.outline.map(([x, y]) => [x * cssPerPx, y * cssPerPx] as const),
+    };
+  }
+
+  function floorCrop(index: number) {
+    const bitmap = framesRef.current[index];
+    const cssPerPx = cssSizeRef.current / bitmap.width;
+    const ink = inkOf(bitmap, index);
+    const pad = 4;
+    const srcX = Math.max(0, ink.minX - pad);
+    const srcY = Math.max(0, ink.minY - pad);
+    const srcW = Math.min(bitmap.width - srcX, ink.maxX - ink.minX + 1 + pad * 2);
+    const srcH = Math.min(bitmap.height - srcY, ink.maxY - ink.minY + 1 + pad * 2);
+    const cropCx = srcX + srcW / 2;
+    const cropCy = srcY + srcH / 2;
+    const inkCx = (ink.minX + ink.maxX) / 2;
+    const inkCy = (ink.minY + ink.maxY) / 2;
+    const points =
+      ink.outline.length >= 2
+        ? ink.outline.map(([x, y]) => [(x + inkCx - cropCx) * cssPerPx, (y + inkCy - cropCy) * cssPerPx] as const)
+        : ([
+            [-((ink.maxX - ink.minX) * cssPerPx) / 2, -((ink.maxY - ink.minY) * cssPerPx) / 2],
+            [((ink.maxX - ink.minX) * cssPerPx) / 2, -((ink.maxY - ink.minY) * cssPerPx) / 2],
+            [((ink.maxX - ink.minX) * cssPerPx) / 2, ((ink.maxY - ink.minY) * cssPerPx) / 2],
+            [-((ink.maxX - ink.minX) * cssPerPx) / 2, ((ink.maxY - ink.minY) * cssPerPx) / 2],
+          ] as const);
+    return { cssHeight: srcH * cssPerPx, points };
+  }
+
+  function floorScale(index: number) {
+    const frames = framesRef.current;
+    const projector = settingsRef.current.projectorAngle;
+    if (!frames[0] || !frames[index]) return undefined;
+    const key = `${projector}:${cssSizeRef.current}:${frames.length}`;
+    let cached = floorFitRef.current;
+    if (!cached || cached.key !== key) {
+      const step = Math.max(1, Math.round(15 / FRAME_STEP_DEGREES));
+      const samples = [floorCrop(0)];
+      for (let sample = step; sample < frames.length; sample += step) samples.push(floorCrop(sample));
+      const steady = floorSteadyScale(projector, samples, window.innerWidth, window.innerHeight);
+      cached = { key, refSpan: steady.refSpan, shrink: steady.shrink };
+      floorFitRef.current = cached;
+    }
+    if (!(cached.refSpan > 0)) return undefined;
+    const current = floorCrop(index);
+    let span = 0;
+    const projected = floorProjectLocals(projector, current.cssHeight, current.points, 1);
+    for (let i = 0; i < projected.length; i += 1) {
+      for (let j = i + 1; j < projected.length; j += 1) {
+        span = Math.max(span, Math.hypot(projected[i][0] - projected[j][0], projected[i][1] - projected[j][1]));
+      }
+    }
+    if (!(span > 0)) return undefined;
+    return (cached.refSpan / span) * cached.shrink;
   }
 
   function drawFloorKeystone(
@@ -234,6 +344,9 @@ export function GoboStage() {
     if (!canvas) return;
     const surface = settingsRef.current.surface;
     const box = floorBoxRef.current;
+    const mark = markRef.current.width > 1 && markRef.current.height > 1 ? markRef.current : undefined;
+    const warp = surface === "floor" && settingsRef.current.projectorAngle < PROJECTOR_MAX - 0.05;
+    const floorScaleNow = warp && shownFrameRef.current >= 0 ? floorScale(shownFrameRef.current) : undefined;
     const next =
       surface === "floor"
         ? floorThrowTransform(
@@ -244,6 +357,8 @@ export function GoboStage() {
             box.oy,
             window.innerWidth,
             window.innerHeight,
+            mark,
+            floorScaleNow,
           )
         : projectorTransform(
             settingsRef.current.projectorAngle,
@@ -251,6 +366,7 @@ export function GoboStage() {
             window.innerWidth,
             window.innerHeight,
             surface,
+            mark,
           );
     canvas.dataset.projector = String(settingsRef.current.projectorAngle);
     canvas.dataset.surface = settingsRef.current.surface;
@@ -264,6 +380,8 @@ export function GoboStage() {
     framesRef.current = [];
     shownFrameRef.current = -1;
     inkCacheRef.current.clear();
+    floorFitRef.current = null;
+    markRef.current = { width: 0, height: 0, rotation: 0, centerX: 0, centerY: 0 };
   }
 
   function clearHideTimer() {
@@ -534,6 +652,11 @@ export function GoboStage() {
       cssSizeRef.current = set.cssSize;
       shownFrameRef.current = -1;
       inkCacheRef.current.clear();
+      floorFitRef.current = null;
+      const first = set.frames[0];
+      if (first && first.width > 0) {
+        markRef.current = markFromFrame(first, set.cssSize / first.width);
+      }
       previous.forEach((bitmap) => bitmap.close());
       const canvas = canvasRef.current;
       if (canvas) canvas.dataset.frames = String(set.frames.length);
