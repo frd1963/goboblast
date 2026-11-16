@@ -263,8 +263,121 @@ html:-webkit-full-screen body {
   color: #f8fafc;
 }
 
+.gobo-section {
+  margin: 0 0 0.7rem;
+  padding: 0.55rem 0.65rem 0.15rem;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.gobo-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+
+.gobo-section-head h3 {
+  flex: none;
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.gobo-section-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gobo-reset {
+  flex: none;
+  margin: 0;
+  padding: 0.05rem 0.3rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.gobo-reset:hover:not(:disabled) {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.gobo-reset:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .gobo-field {
   margin-bottom: 0.65rem;
+}
+
+.gobo-colors {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.gobo-dial {
+  margin: 0.15rem 0 0.35rem;
+  border-radius: 8px;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.gobo-dial-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.gobo-dial:active {
+  cursor: grabbing;
+}
+
+.gobo-dial-svg:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+.gobo-stack-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.gobo-check-name {
+  flex: 1;
+}
+
+.gobo-check-value {
+  color: #f8fafc;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .gobo-surface {
@@ -284,9 +397,10 @@ html:-webkit-full-screen body {
 
 .gobo-field-label {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.15rem 0.5rem;
   margin-bottom: 0.25rem;
   color: #cbd5e1;
   font-size: 0.8rem;

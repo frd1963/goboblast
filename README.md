@@ -17,7 +17,9 @@ Open [http://localhost:4317](http://localhost:4317).
 
 - Click the black stage, or press a key that is not already assigned, to open the control panel.
 - Esc closes the panel. F toggles browser fullscreen.
-- Drag Rotation left of center for a counterclockwise spin and right of center for a clockwise spin. The middle is 0°/s, so the gobo holds its angle. The slider sets that speed directly, up to 180°/s.
+- The panel groups Text, Look, Motion, and Projection. Each group shows its current value and can reset itself.
+- Drag Spin left of center for a counterclockwise spin and right of center for a clockwise spin. The middle is 0°/s, so the gobo holds its angle. The slider sets that speed directly, up to 180°/s.
+- The projection diagram shows the beam on the floor or the wall. Drag the beam or the angle slider; they stay in step. Floor 0° skims the floor and 90° points straight down. Wall 0° aims straight at the wall and 90° pitches up.
 - Left and right arrows add 15°/s on top of the slider and do not open the panel. Opposite presses slow the spin and can reverse it.
 - While a text field, menu, or slider in the panel is focused, those keys stay with the control.
 - The panel hides after 4 seconds without a pointer move, key press, or control change. Any of those resets the timer.

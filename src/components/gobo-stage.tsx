@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ProjectorDial } from "@/components/projector-dial";
 import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
 import { PROJECTOR_MAX, PROJECTOR_MIN, keystoneFor } from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
@@ -24,6 +25,7 @@ import {
   SPIN_MAX,
   SPIN_MIN,
   SPIN_STEP,
+  defaultSettings,
   type GoboSettings,
   type TextAlign,
   hasVisibleText,
@@ -36,6 +38,7 @@ const CONTROL_SELECTOR = [
   "input",
   "textarea",
   "select",
+  "button",
   "[role='slider']",
   "[role='combobox']",
   "[role='listbox']",
@@ -93,7 +96,7 @@ function formatSpeed(spin: number) {
 function angleCaption(rotation: number, spin: number) {
   const angle = formatDegrees(rotation);
   if (spin === 0) return `Holding ${angle}`;
-  return angle;
+  return `At ${angle}`;
 }
 
 function toggleFullscreen() {
@@ -510,243 +513,304 @@ export function GoboStage() {
             </Button>
           </div>
           <div className="gobo-panel-body">
-            <div className="gobo-field">
-              <Label htmlFor="gobo-text" className="gobo-field-label">
-                Gobo text
-              </Label>
-              <Textarea
-                id="gobo-text"
-                value={settings.text}
-                rows={3}
-                spellCheck={false}
-                autoComplete="off"
-                autoCorrect="off"
-                placeholder="One line per row"
-                onPointerDown={(event) => event.currentTarget.focus()}
-                onChange={(event) => update({ text: event.target.value })}
-              />
-            </div>
-
-            <div className="gobo-field">
-              <Label className="gobo-field-label" id="gobo-font-label">
-                Font
-              </Label>
-              <Select
-                modal={false}
-                items={Object.fromEntries(FONT_OPTIONS.map((item) => [item.value, item.label]))}
-                value={settings.font}
-                onValueChange={(value) => {
-                  if (typeof value === "string") update({ font: value });
-                }}
-              >
-                <SelectTrigger className="w-full" aria-labelledby="gobo-font-label" style={{ fontFamily: font.stack }}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start" className="z-[80]">
-                  {FONT_GROUPS.map((group) => (
-                    <SelectGroup key={group}>
-                      <SelectLabel>{group}</SelectLabel>
-                      {FONT_OPTIONS.filter((item) => item.group === group).map((item) => (
-                        <SelectItem
-                          key={item.value}
-                          value={item.value}
-                          style={{ fontFamily: item.stack, fontWeight: item.weight }}
-                        >
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <SliderField
-              id="gobo-size"
-              label="Size"
-              valueLabel={`${settings.size}%`}
-              min={2}
-              max={80}
-              step={1}
-              value={settings.size}
-              onChange={(size) => update({ size })}
-            />
-
-            <div className="gobo-field">
-              <Label htmlFor="gobo-spin" className="gobo-field-label">
-                Rotation
-                <span>{formatSpeed(settings.spin)}</span>
-              </Label>
-              <div className="gobo-bipolar">
-                <span className="gobo-bipolar-zero" aria-hidden="true" />
-                <Slider
-                  id="gobo-spin"
-                  min={SPIN_MIN}
-                  max={SPIN_MAX}
-                  step={1}
-                  value={[Math.round(settings.spin)]}
-                  aria-label="Rotation speed"
-                  onValueChange={(next) => update({ spin: sliderNumber(next) })}
-                />
-              </div>
-              <p className="gobo-speed" data-testid="angle-readout">
-                {angleCaption(settings.rotation, settings.spin)}
-              </p>
-            </div>
-
-            <div className="gobo-field">
-              <Label className="gobo-field-label" id="gobo-surface-label">
-                Surface
-              </Label>
-              <div className="gobo-surface" role="group" aria-labelledby="gobo-surface-label">
-                <Button
-                  type="button"
-                  variant={settings.surface === "floor" ? "default" : "secondary"}
-                  aria-pressed={settings.surface === "floor"}
-                  onClick={() => update({ surface: "floor" })}
-                >
-                  Floor
-                </Button>
-                <Button
-                  type="button"
-                  variant={settings.surface === "wall" ? "default" : "secondary"}
-                  aria-pressed={settings.surface === "wall"}
-                  onClick={() => update({ surface: "wall" })}
-                >
-                  Wall
-                </Button>
-              </div>
-            </div>
-
-            <div className="gobo-field">
-              <Label htmlFor="gobo-projector" className="gobo-field-label">
-                Projector
-                <span>{formatDegrees(settings.projectorAngle)}</span>
-              </Label>
-              <Slider
-                id="gobo-projector"
-                min={PROJECTOR_MIN}
-                max={PROJECTOR_MAX}
-                step={1}
-                value={[settings.projectorAngle]}
-                aria-label="Projector angle"
-                onValueChange={(next) => update({ projectorAngle: sliderNumber(next) })}
-              />
-              <p className="gobo-speed">
-                {settings.surface === "floor"
-                  ? "0° is a horizontal beam, with the full floor keystone. 90° points straight down and has no skew."
-                  : "0° aims straight at the wall. Raising it pitches the projector off that aim."}
-              </p>
-            </div>
-
-            <div className="gobo-colors">
+            <PanelSection
+              title="Text"
+              value={font.label}
+              changed={sectionChanged(settings, ["text", "font", "align", "letterSpacing", "lineHeight"])}
+              onReset={() =>
+                update({
+                  text: defaultSettings.text,
+                  font: defaultSettings.font,
+                  align: defaultSettings.align,
+                  letterSpacing: defaultSettings.letterSpacing,
+                  lineHeight: defaultSettings.lineHeight,
+                })
+              }
+            >
               <div className="gobo-field">
-                <Label htmlFor="gobo-color" className="gobo-field-label">
-                  Color
+                <Label htmlFor="gobo-text" className="gobo-field-label">
+                  Text
                 </Label>
-                <Input
-                  id="gobo-color"
-                  type="color"
-                  value={settings.color}
-                  aria-label="Text color"
-                  onChange={(event) => update({ color: event.target.value })}
+                <Textarea
+                  id="gobo-text"
+                  value={settings.text}
+                  rows={2}
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  placeholder="One line per row"
+                  onPointerDown={(event) => event.currentTarget.focus()}
+                  onChange={(event) => update({ text: event.target.value })}
                 />
               </div>
-              <div className={`gobo-field ${settings.outline ? "" : "gobo-dimmed"}`}>
-                <Label htmlFor="gobo-outline-color" className="gobo-field-label">
-                  Outline color
+
+              <div className="gobo-field">
+                <Label className="gobo-field-label" id="gobo-font-label">
+                  Font
+                  <span>{font.label}</span>
                 </Label>
-                <Input
-                  id="gobo-outline-color"
-                  type="color"
-                  value={settings.outlineColor}
-                  disabled={!settings.outline}
-                  aria-label="Outline color"
-                  onChange={(event) => update({ outlineColor: event.target.value })}
-                />
+                <Select
+                  modal={false}
+                  items={Object.fromEntries(FONT_OPTIONS.map((item) => [item.value, item.label]))}
+                  value={settings.font}
+                  onValueChange={(value) => {
+                    if (typeof value === "string") update({ font: value });
+                  }}
+                >
+                  <SelectTrigger className="w-full" aria-labelledby="gobo-font-label" style={{ fontFamily: font.stack }}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="start" className="z-[80]">
+                    {FONT_GROUPS.map((group) => (
+                      <SelectGroup key={group}>
+                        <SelectLabel>{group}</SelectLabel>
+                        {FONT_OPTIONS.filter((item) => item.group === group).map((item) => (
+                          <SelectItem
+                            key={item.value}
+                            value={item.value}
+                            style={{ fontFamily: item.stack, fontWeight: item.weight }}
+                          >
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
 
-            <SliderField
-              id="gobo-tracking"
-              label="Letter spacing"
-              valueLabel={`${settings.letterSpacing.toFixed(2)} em`}
-              min={-0.08}
-              max={0.5}
-              step={0.01}
-              value={settings.letterSpacing}
-              onChange={(letterSpacing) => update({ letterSpacing })}
-            />
+              <div className="gobo-field">
+                <Label className="gobo-field-label" id="gobo-align-label">
+                  Alignment
+                  <span>{ALIGN_ITEMS[settings.align]}</span>
+                </Label>
+                <Select
+                  modal={false}
+                  items={ALIGN_ITEMS}
+                  value={settings.align}
+                  onValueChange={(value) => {
+                    if (value === "left" || value === "center" || value === "right") {
+                      update({ align: value satisfies TextAlign });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full" aria-labelledby="gobo-align-label">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="start" className="z-[80]">
+                    <SelectItem value="left">Left</SelectItem>
+                    <SelectItem value="center">Center</SelectItem>
+                    <SelectItem value="right">Right</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <SliderField
-              id="gobo-leading"
-              label="Line height"
-              valueLabel={settings.lineHeight.toFixed(2)}
-              min={0.8}
-              max={2}
-              step={0.05}
-              value={settings.lineHeight}
-              onChange={(lineHeight) => update({ lineHeight })}
-            />
-
-            <div className="gobo-field">
-              <Label className="gobo-field-label" id="gobo-align-label">
-                Alignment
-              </Label>
-              <Select
-                modal={false}
-                items={ALIGN_ITEMS}
-                value={settings.align}
-                onValueChange={(value) => {
-                  if (value === "left" || value === "center" || value === "right") {
-                    update({ align: value satisfies TextAlign });
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full" aria-labelledby="gobo-align-label">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start" className="z-[80]">
-                  <SelectItem value="left">Left</SelectItem>
-                  <SelectItem value="center">Center</SelectItem>
-                  <SelectItem value="right">Right</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Label className="gobo-check" htmlFor="gobo-outline">
-              <Switch
-                id="gobo-outline"
-                checked={settings.outline}
-                onCheckedChange={(outline) => update({ outline })}
-              />
-              Outline
-            </Label>
-
-            <div className={settings.outline ? undefined : "gobo-dimmed"}>
               <SliderField
-                id="gobo-outline-width"
-                label="Outline width"
-                valueLabel={String(settings.outlineWidth)}
-                min={1}
-                max={16}
-                step={1}
-                value={settings.outlineWidth}
-                disabled={!settings.outline}
-                onChange={(outlineWidth) => update({ outlineWidth })}
+                id="gobo-tracking"
+                label="Letter spacing"
+                valueLabel={`${settings.letterSpacing.toFixed(2)} em`}
+                min={-0.08}
+                max={0.5}
+                step={0.01}
+                value={settings.letterSpacing}
+                onChange={(letterSpacing) => update({ letterSpacing })}
               />
-            </div>
 
-            <SliderField
-              id="gobo-glow"
-              label="Soft glow"
-              valueLabel={`${settings.glow}%`}
-              min={0}
-              max={100}
-              step={1}
-              value={settings.glow}
-              onChange={(glow) => update({ glow })}
-            />
+              <SliderField
+                id="gobo-leading"
+                label="Line height"
+                valueLabel={settings.lineHeight.toFixed(2)}
+                min={0.8}
+                max={2}
+                step={0.05}
+                value={settings.lineHeight}
+                onChange={(lineHeight) => update({ lineHeight })}
+              />
+            </PanelSection>
+
+            <PanelSection
+              title="Look"
+              value={`${settings.size}% · ${settings.color}`}
+              changed={sectionChanged(settings, ["color", "size", "outline", "outlineWidth", "outlineColor", "glow"])}
+              onReset={() =>
+                update({
+                  color: defaultSettings.color,
+                  size: defaultSettings.size,
+                  outline: defaultSettings.outline,
+                  outlineWidth: defaultSettings.outlineWidth,
+                  outlineColor: defaultSettings.outlineColor,
+                  glow: defaultSettings.glow,
+                })
+              }
+            >
+              <SliderField
+                id="gobo-size"
+                label="Size"
+                valueLabel={`${settings.size}%`}
+                min={2}
+                max={80}
+                step={1}
+                value={settings.size}
+                onChange={(size) => update({ size })}
+              />
+
+              <div className="gobo-colors">
+                <div className="gobo-field">
+                  <Label htmlFor="gobo-color" className="gobo-field-label gobo-stack-label">
+                    Color
+                    <span>{settings.color}</span>
+                  </Label>
+                  <Input
+                    id="gobo-color"
+                    type="color"
+                    value={settings.color}
+                    aria-label="Text color"
+                    onChange={(event) => update({ color: event.target.value })}
+                  />
+                </div>
+                <div className={`gobo-field ${settings.outline ? "" : "gobo-dimmed"}`}>
+                  <Label htmlFor="gobo-outline-color" className="gobo-field-label gobo-stack-label">
+                    Outline color
+                    <span>{settings.outlineColor}</span>
+                  </Label>
+                  <Input
+                    id="gobo-outline-color"
+                    type="color"
+                    value={settings.outlineColor}
+                    disabled={!settings.outline}
+                    aria-label="Outline color"
+                    onChange={(event) => update({ outlineColor: event.target.value })}
+                  />
+                </div>
+              </div>
+
+              <Label className="gobo-check" htmlFor="gobo-outline">
+                <Switch
+                  id="gobo-outline"
+                  checked={settings.outline}
+                  onCheckedChange={(outline) => update({ outline })}
+                />
+                <span className="gobo-check-name">Outline</span>
+                <span className="gobo-check-value">{settings.outline ? "On" : "Off"}</span>
+              </Label>
+
+              <div className={settings.outline ? undefined : "gobo-dimmed"}>
+                <SliderField
+                  id="gobo-outline-width"
+                  label="Outline width"
+                  valueLabel={String(settings.outlineWidth)}
+                  min={1}
+                  max={16}
+                  step={1}
+                  value={settings.outlineWidth}
+                  disabled={!settings.outline}
+                  onChange={(outlineWidth) => update({ outlineWidth })}
+                />
+              </div>
+
+              <SliderField
+                id="gobo-glow"
+                label="Glow"
+                valueLabel={`${settings.glow}%`}
+                min={0}
+                max={100}
+                step={1}
+                value={settings.glow}
+                onChange={(glow) => update({ glow })}
+              />
+            </PanelSection>
+
+            <PanelSection
+              title="Motion"
+              value={settings.spin === 0 ? "Stopped" : formatSpeed(settings.spin)}
+              changed={sectionChanged(settings, ["spin", "rotation"])}
+              onReset={() => update({ spin: defaultSettings.spin, rotation: defaultSettings.rotation })}
+            >
+              <div className="gobo-field">
+                <Label htmlFor="gobo-spin" className="gobo-field-label">
+                  Spin
+                  <span>{formatSpeed(settings.spin)}</span>
+                </Label>
+                <div className="gobo-bipolar">
+                  <span className="gobo-bipolar-zero" aria-hidden="true" />
+                  <Slider
+                    id="gobo-spin"
+                    min={SPIN_MIN}
+                    max={SPIN_MAX}
+                    step={1}
+                    value={[Math.round(settings.spin)]}
+                    aria-label="Spin speed"
+                    onValueChange={(next) => update({ spin: sliderNumber(next) })}
+                  />
+                </div>
+                <p className="gobo-speed" data-testid="angle-readout">
+                  {angleCaption(settings.rotation, settings.spin)}
+                </p>
+              </div>
+            </PanelSection>
+
+            <PanelSection
+              title="Projection"
+              value={`${settings.surface === "floor" ? "Floor" : "Wall"} · ${formatDegrees(settings.projectorAngle)}`}
+              changed={sectionChanged(settings, ["surface", "projectorAngle"])}
+              onReset={() =>
+                update({
+                  surface: defaultSettings.surface,
+                  projectorAngle: defaultSettings.projectorAngle,
+                })
+              }
+            >
+              <div className="gobo-field">
+                <Label className="gobo-field-label" id="gobo-surface-label">
+                  Surface
+                  <span>{settings.surface === "floor" ? "Floor" : "Wall"}</span>
+                </Label>
+                <div className="gobo-surface" role="group" aria-labelledby="gobo-surface-label">
+                  <Button
+                    type="button"
+                    variant={settings.surface === "floor" ? "default" : "secondary"}
+                    aria-pressed={settings.surface === "floor"}
+                    onClick={() => update({ surface: "floor" })}
+                  >
+                    Floor
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={settings.surface === "wall" ? "default" : "secondary"}
+                    aria-pressed={settings.surface === "wall"}
+                    onClick={() => update({ surface: "wall" })}
+                  >
+                    Wall
+                  </Button>
+                </div>
+              </div>
+
+              <div className="gobo-field">
+                <Label htmlFor="gobo-projector" className="gobo-field-label">
+                  Angle
+                  <span>{formatDegrees(settings.projectorAngle)}</span>
+                </Label>
+                <ProjectorDial
+                  surface={settings.surface}
+                  angle={settings.projectorAngle}
+                  onChange={(projectorAngle) => update({ projectorAngle })}
+                />
+                <p className="gobo-speed">
+                  {settings.surface === "floor"
+                    ? "Drag the beam. 0° skims the floor. 90° points straight down."
+                    : "Drag the beam. 0° aims straight at the wall. 90° pitches up."}
+                </p>
+                <Slider
+                  id="gobo-projector"
+                  min={PROJECTOR_MIN}
+                  max={PROJECTOR_MAX}
+                  step={1}
+                  value={[settings.projectorAngle]}
+                  aria-label="Projector angle"
+                  onValueChange={(next) => update({ projectorAngle: sliderNumber(next) })}
+                />
+              </div>
+            </PanelSection>
 
             <div className="gobo-field">
               <Button type="button" variant="secondary" className="gobo-menu-btn" onClick={toggleFullscreen}>
@@ -756,18 +820,47 @@ export function GoboStage() {
 
             <p className="gobo-hint">
               Click the stage or press any unassigned key to open this panel. Esc closes it. F toggles
-              fullscreen. Rotation sets the spin directly: the middle is stopped, left is
-              counterclockwise, and right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add{" "}
-              {SPIN_STEP}°/s on top of that and can reverse it. At zero speed the gobo holds its angle.
-              On the floor, a horizontal beam at 0° gets the full keystone, and straight down at 90° has
-              none. On a wall, 0° aims straight with no skew, and a higher angle pitches off that aim.
-              The panel hides after 4 seconds of
-              quiet, and every change is kept in this browser. Clear the text for a pure black frame.
+              fullscreen. Spin sets the speed directly: the middle is stopped, left is counterclockwise, and
+              right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add {SPIN_STEP}°/s and can
+              reverse it. At zero speed the gobo holds its angle. While a control is focused, those keys stay
+              with it. The panel hides after 4 seconds of quiet, and every change is kept in this browser.
+              Clear the text for a pure black frame.
             </p>
           </div>
         </div>
       ) : null}
     </main>
+  );
+}
+
+function sectionChanged(settings: GoboSettings, keys: readonly (keyof GoboSettings)[]) {
+  return keys.some((key) => settings[key] !== defaultSettings[key]);
+}
+
+function PanelSection({
+  title,
+  value,
+  changed,
+  onReset,
+  children,
+}: {
+  title: string;
+  value: string;
+  changed: boolean;
+  onReset: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="gobo-section" aria-label={title}>
+      <div className="gobo-section-head">
+        <h3>{title}</h3>
+        <span className="gobo-section-value">{value}</span>
+        <button type="button" className="gobo-reset" onClick={onReset} disabled={!changed}>
+          Reset
+        </button>
+      </div>
+      {children}
+    </section>
   );
 }
 
