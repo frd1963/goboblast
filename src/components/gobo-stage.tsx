@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,15 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ProjectorDial } from "@/components/projector-dial";
-import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
+import {
+  frameIndex,
+  isGoboImageFile,
+  rasterizeGoboFile,
+  renderGoboFrames,
+  renderImageGoboFrames,
+} from "@/lib/gobo-frames";
+import { parseHex, rgbToHex } from "@/lib/gobo-key";
+import { clearGoboImage, loadGoboImage, saveGoboImage } from "@/lib/gobo-store";
 import { angleFromSpot, clampSpot, spotForAngle, type BeamSpot } from "@/lib/placement";
 import { PROJECTOR_MAX, PROJECTOR_MIN, keystoneFor } from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
@@ -28,6 +36,7 @@ import {
   SPIN_STEP,
   defaultSettings,
   type GoboSettings,
+  type GoboSource,
   type TextAlign,
   hasVisibleText,
   loadSettings,
@@ -123,6 +132,11 @@ export function GoboStage() {
   const settingsRef = useRef(settings);
   const buildRef = useRef(0);
   const placementRef = useRef("");
+  const [imageMaster, setImageMaster] = useState<HTMLCanvasElement | null>(null);
+  const [imageError, setImageError] = useState("");
+  const imageToken = useRef(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const previewRef = useRef<HTMLCanvasElement>(null);
 
   const bindCanvas = useCallback((node: HTMLCanvasElement | null) => {
     canvasRef.current = node;
@@ -265,6 +279,49 @@ export function GoboStage() {
     update(withSpot(current.projectorDistance, current.projectorHeight, placed.spot));
   }
 
+  async function takePicture(file: File) {
+    setImageError("");
+    try {
+      if (!isGoboImageFile(file)) throw new Error("unsupported");
+      const canvas = await rasterizeGoboFile(file);
+      await saveGoboImage(file, file.name);
+      imageToken.current += 1;
+      setImageMaster(canvas);
+      update({ source: "image", imageName: file.name });
+    } catch {
+      setImageError("That file couldn't be read. Use PNG, JPG, WebP, GIF, or SVG.");
+    }
+  }
+
+  async function clearPicture(patch: Partial<GoboSettings> = {}) {
+    setImageError("");
+    imageToken.current += 1;
+    setImageMaster(null);
+    update({ imageName: "", ...patch });
+    try {
+      await clearGoboImage();
+    } catch {
+      setImageError("The picture could not be cleared.");
+    }
+  }
+
+  async function pickScreenColor() {
+    const Dropper = (
+      window as Window & { EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> } }
+    ).EyeDropper;
+    if (!Dropper) {
+      setImageError("This browser has no screen eyedropper. Click the picture instead.");
+      return;
+    }
+    try {
+      const result = await new Dropper().open();
+      const hex = result.sRGBHex.toLowerCase();
+      if (/^#[0-9a-f]{6}$/.test(hex)) update({ chromaColor: hex, chromaKey: true });
+    } catch {
+      // The user dismissed the dropper.
+    }
+  }
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -386,7 +443,8 @@ export function GoboStage() {
   }, []);
 
   const font = getFont(settings.font);
-  const visible = hasVisibleText(settings.text);
+  const imageMode = settings.source === "image";
+  const visible = imageMode ? imageMaster !== null : hasVisibleText(settings.text);
   const [viewport, setViewport] = useState(() => ({
     w: typeof window === "undefined" ? 1 : window.innerWidth,
     h: typeof window === "undefined" ? 1 : window.innerHeight,
@@ -429,6 +487,7 @@ export function GoboStage() {
   ].join("\u0000");
 
   useEffect(() => {
+    if (settings.source !== "text") return;
     if (!hasVisibleText(settings.text)) {
       releaseFrames();
       return;
@@ -490,7 +549,135 @@ export function GoboStage() {
     };
     // frameKey already lists every visual field this raster depends on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frameKey]);
+  }, [frameKey, settings.source]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadGoboImage()
+      .then(async (record) => {
+        if (cancelled || !record) return;
+        const canvas = await rasterizeGoboFile(new File([record.blob], record.name, { type: record.type }));
+        if (cancelled) return;
+        imageToken.current += 1;
+        setImageMaster(canvas);
+        if (settingsRef.current.imageName !== record.name) update({ imageName: record.name });
+      })
+      .catch(() => {
+        if (!cancelled) setImageError("The saved picture could not be opened.");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Load the stored picture once. Later uploads replace it directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const preview = previewRef.current;
+    const master = imageMaster;
+    if (!preview || !master) return;
+    const width = 220;
+    const height = Math.max(48, Math.round((width * master.height) / master.width));
+    preview.width = width;
+    preview.height = Math.min(height, 120);
+    const ctx = preview.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#020617";
+    ctx.fillRect(0, 0, preview.width, preview.height);
+    const scale = Math.min(preview.width / master.width, preview.height / master.height);
+    const drawW = master.width * scale;
+    const drawH = master.height * scale;
+    ctx.drawImage(master, (preview.width - drawW) / 2, (preview.height - drawH) / 2, drawW, drawH);
+  }, [imageMaster, open, settings.source]);
+
+  const imageFrameKey = [
+    settings.source,
+    settings.size,
+    settings.color,
+    settings.lumaKey,
+    settings.lumaThreshold,
+    settings.lumaSoftness,
+    settings.lumaInvert,
+    settings.chromaKey,
+    settings.chromaColor,
+    settings.chromaTolerance,
+    settings.chromaSoftness,
+    settings.chromaSpill,
+    settings.imageTint,
+    imageToken.current,
+    viewport.w,
+    viewport.h,
+  ].join("\u0000");
+
+  useEffect(() => {
+    if (settings.source !== "image") return;
+    if (!imageMaster) {
+      releaseFrames();
+      return;
+    }
+    const generation = ++buildRef.current;
+    const vmin = Math.min(viewport.w, viewport.h) / 100;
+    let cancelled = false;
+    void renderImageGoboFrames(
+      imageMaster,
+      settings.size * vmin,
+      {
+        lumaKey: settings.lumaKey,
+        lumaThreshold: settings.lumaThreshold / 100,
+        lumaSoftness: settings.lumaSoftness / 100,
+        lumaInvert: settings.lumaInvert,
+        chromaKey: settings.chromaKey,
+        chroma: parseHex(settings.chromaColor),
+        chromaTolerance: settings.chromaTolerance / 100,
+        chromaSoftness: settings.chromaSoftness / 100,
+        chromaSpill: settings.chromaSpill / 100,
+        tint: settings.imageTint,
+        tintColor: parseHex(settings.color),
+      },
+      (bitmap, cssSize) => {
+        if (cancelled || generation !== buildRef.current) return;
+        void createImageBitmap(bitmap)
+          .then((preview) => {
+            if (cancelled || generation !== buildRef.current) {
+              preview.close();
+              return;
+            }
+            cssSizeRef.current = cssSize;
+            const previous = framesRef.current;
+            framesRef.current = [preview];
+            shownFrameRef.current = -1;
+            placementRef.current = "";
+            previous.forEach((item) => item.close());
+            const canvas = canvasRef.current;
+            if (canvas) canvas.dataset.frames = "1";
+            paintFrame();
+          })
+          .catch(() => {
+            // The source frame was dropped before it could be copied.
+          });
+      },
+      () => !cancelled && generation === buildRef.current,
+    ).then((set) => {
+      if (cancelled || generation !== buildRef.current) {
+        set.frames.forEach((bitmap) => bitmap.close());
+        return;
+      }
+      const previous = framesRef.current;
+      framesRef.current = set.frames;
+      cssSizeRef.current = set.cssSize;
+      shownFrameRef.current = -1;
+      placementRef.current = "";
+      previous.forEach((bitmap) => bitmap.close());
+      const canvas = canvasRef.current;
+      if (canvas) canvas.dataset.frames = String(set.frames.length);
+      paintFrame();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // imageFrameKey lists every field this raster depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageFrameKey, imageMaster]);
 
   return (
     <main
@@ -500,6 +687,7 @@ export function GoboStage() {
       data-projector={settings.projectorAngle}
       data-keystone={settings.projectorSpot}
       data-surface={settings.surface}
+      data-source={settings.source}
       onPointerDown={(event) => {
         const target = event.target;
         if (target instanceof Node && panelRef.current?.contains(target)) return;
@@ -513,7 +701,7 @@ export function GoboStage() {
           className="gobo-reel"
           data-testid="gobo"
           data-spin={settings.spin}
-          aria-label={settings.text}
+          aria-label={imageMode ? settings.imageName || "Image gobo" : settings.text}
         />
       ) : null}
 
@@ -540,6 +728,7 @@ export function GoboStage() {
           </div>
           <div className="gobo-panel-body">
             <PanelSection
+              className="gobo-col-projection"
               title="Projection"
               value={formatDegrees(settings.projectorAngle)}
               changed={sectionChanged(settings, [
@@ -598,19 +787,56 @@ export function GoboStage() {
             </PanelSection>
 
             <PanelSection
-              title="Text"
-              value={font.label}
-              changed={sectionChanged(settings, ["text", "font", "align", "letterSpacing", "lineHeight"])}
-              onReset={() =>
-                update({
+              className="gobo-col-source"
+              title="Source"
+              value={imageMode ? settings.imageName || "Image" : "Text"}
+              changed={sectionChanged(settings, [
+                "source",
+                "text",
+                "font",
+                "align",
+                "letterSpacing",
+                "lineHeight",
+                "imageName",
+              ])}
+              onReset={() => {
+                void clearPicture({
+                  source: defaultSettings.source,
                   text: defaultSettings.text,
                   font: defaultSettings.font,
                   align: defaultSettings.align,
                   letterSpacing: defaultSettings.letterSpacing,
                   lineHeight: defaultSettings.lineHeight,
-                })
-              }
+                });
+              }}
             >
+              <div className="gobo-choice" role="group" aria-label="Gobo source">
+                {(["text", "image"] as const).map((choice) => (
+                  <button
+                    key={choice}
+                    type="button"
+                    className="gobo-choice-btn"
+                    aria-pressed={settings.source === choice}
+                    onClick={() => update({ source: choice satisfies GoboSource })}
+                  >
+                    {choice === "text" ? "Text" : "Image"}
+                  </button>
+                ))}
+              </div>
+              {imageMode ? (
+                <ImageSource
+                  name={settings.imageName}
+                  error={imageError}
+                  ready={imageMaster !== null}
+                  fileRef={fileRef}
+                  previewRef={previewRef}
+                  onPickFile={() => fileRef.current?.click()}
+                  onFile={(file) => void takePicture(file)}
+                  onClear={() => void clearPicture()}
+                  onSample={(color) => update({ chromaColor: color, chromaKey: true })}
+                />
+              ) : (
+                <>
               <div className="gobo-field">
                 <Label htmlFor="gobo-text" className="gobo-field-label">
                   Text
@@ -710,12 +936,177 @@ export function GoboStage() {
                 value={settings.lineHeight}
                 onChange={(lineHeight) => update({ lineHeight })}
               />
+                </>
+              )}
             </PanelSection>
 
+            {imageMode ? (
+              <PanelSection
+                className="gobo-col-key"
+                title="Key"
+                value={keySummary(settings)}
+                changed={sectionChanged(settings, [
+                  "lumaKey",
+                  "lumaThreshold",
+                  "lumaSoftness",
+                  "lumaInvert",
+                  "chromaKey",
+                  "chromaColor",
+                  "chromaTolerance",
+                  "chromaSoftness",
+                  "chromaSpill",
+                  "imageTint",
+                ])}
+                onReset={() =>
+                  update({
+                    lumaKey: defaultSettings.lumaKey,
+                    lumaThreshold: defaultSettings.lumaThreshold,
+                    lumaSoftness: defaultSettings.lumaSoftness,
+                    lumaInvert: defaultSettings.lumaInvert,
+                    chromaKey: defaultSettings.chromaKey,
+                    chromaColor: defaultSettings.chromaColor,
+                    chromaTolerance: defaultSettings.chromaTolerance,
+                    chromaSoftness: defaultSettings.chromaSoftness,
+                    chromaSpill: defaultSettings.chromaSpill,
+                    imageTint: defaultSettings.imageTint,
+                  })
+                }
+              >
+                <Label className="gobo-check" htmlFor="gobo-luma">
+                  <Switch
+                    id="gobo-luma"
+                    checked={settings.lumaKey}
+                    onCheckedChange={(lumaKey) => update({ lumaKey })}
+                  />
+                  <span className="gobo-check-name">Luma key</span>
+                  <span className="gobo-check-value">{settings.lumaKey ? "On" : "Off"}</span>
+                </Label>
+                <div className={settings.lumaKey ? "gobo-split" : "gobo-split gobo-dimmed"}>
+                  <SliderField
+                    id="gobo-luma-threshold"
+                    label="Threshold"
+                    valueLabel={`${settings.lumaThreshold}%`}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={settings.lumaThreshold}
+                    disabled={!settings.lumaKey}
+                    onChange={(lumaThreshold) => update({ lumaThreshold })}
+                  />
+                  <SliderField
+                    id="gobo-luma-softness"
+                    label="Softness"
+                    valueLabel={`${settings.lumaSoftness}%`}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={settings.lumaSoftness}
+                    disabled={!settings.lumaKey}
+                    onChange={(lumaSoftness) => update({ lumaSoftness })}
+                  />
+                </div>
+                <Label className={`gobo-check ${settings.lumaKey ? "" : "gobo-dimmed"}`} htmlFor="gobo-luma-invert">
+                  <Switch
+                    id="gobo-luma-invert"
+                    checked={settings.lumaInvert}
+                    disabled={!settings.lumaKey}
+                    onCheckedChange={(lumaInvert) => update({ lumaInvert })}
+                  />
+                  <span className="gobo-check-name">Invert</span>
+                  <span className="gobo-check-value">{settings.lumaInvert ? "Knock out light" : "Knock out dark"}</span>
+                </Label>
+
+                <Label className="gobo-check" htmlFor="gobo-chroma">
+                  <Switch
+                    id="gobo-chroma"
+                    checked={settings.chromaKey}
+                    onCheckedChange={(chromaKey) => update({ chromaKey })}
+                  />
+                  <span className="gobo-check-name">Chroma key</span>
+                  <span className="gobo-check-value">{settings.chromaKey ? "On" : "Off"}</span>
+                </Label>
+                <div className={settings.chromaKey ? "gobo-colors" : "gobo-colors gobo-dimmed"}>
+                  <div className="gobo-field">
+                    <Label htmlFor="gobo-chroma-color" className="gobo-field-label gobo-stack-label">
+                      Key color
+                      <span>{settings.chromaColor}</span>
+                    </Label>
+                    <Input
+                      id="gobo-chroma-color"
+                      type="color"
+                      value={settings.chromaColor}
+                      disabled={!settings.chromaKey}
+                      aria-label="Chroma key color"
+                      onChange={(event) => update({ chromaColor: event.target.value })}
+                    />
+                  </div>
+                  <div className="gobo-field">
+                    <Label className="gobo-field-label">Pick</Label>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="gobo-menu-btn"
+                      disabled={!settings.chromaKey}
+                      onClick={() => void pickScreenColor()}
+                    >
+                      From screen
+                    </Button>
+                  </div>
+                </div>
+                <div className={settings.chromaKey ? "gobo-split" : "gobo-split gobo-dimmed"}>
+                  <SliderField
+                    id="gobo-chroma-tolerance"
+                    label="Tolerance"
+                    valueLabel={`${settings.chromaTolerance}%`}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={settings.chromaTolerance}
+                    disabled={!settings.chromaKey}
+                    onChange={(chromaTolerance) => update({ chromaTolerance })}
+                  />
+                  <SliderField
+                    id="gobo-chroma-soft"
+                    label="Softness"
+                    valueLabel={`${settings.chromaSoftness}%`}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={settings.chromaSoftness}
+                    disabled={!settings.chromaKey}
+                    onChange={(chromaSoftness) => update({ chromaSoftness })}
+                  />
+                </div>
+                <div className={settings.chromaKey ? undefined : "gobo-dimmed"}>
+                  <SliderField
+                    id="gobo-chroma-spill"
+                    label="Spill"
+                    valueLabel={`${settings.chromaSpill}%`}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={settings.chromaSpill}
+                    disabled={!settings.chromaKey}
+                    onChange={(chromaSpill) => update({ chromaSpill })}
+                  />
+                </div>
+              </PanelSection>
+            ) : null}
+
+            <div className="gobo-col-side">
             <PanelSection
+              className="gobo-col-look"
               title="Look"
-              value={`${settings.size}% · ${settings.color}`}
-              changed={sectionChanged(settings, ["color", "size", "outline", "outlineWidth", "outlineColor", "glow"])}
+              value={imageMode ? `${settings.size}%${settings.imageTint ? ` · ${settings.color}` : ""}` : `${settings.size}% · ${settings.color}`}
+              changed={sectionChanged(settings, [
+                "color",
+                "size",
+                "outline",
+                "outlineWidth",
+                "outlineColor",
+                "glow",
+                "imageTint",
+              ])}
               onReset={() =>
                 update({
                   color: defaultSettings.color,
@@ -724,6 +1115,7 @@ export function GoboStage() {
                   outlineWidth: defaultSettings.outlineWidth,
                   outlineColor: defaultSettings.outlineColor,
                   glow: defaultSettings.glow,
+                  imageTint: defaultSettings.imageTint,
                 })
               }
             >
@@ -738,20 +1130,34 @@ export function GoboStage() {
                 onChange={(size) => update({ size })}
               />
 
+              {imageMode ? (
+                <Label className="gobo-check" htmlFor="gobo-tint">
+                  <Switch
+                    id="gobo-tint"
+                    checked={settings.imageTint}
+                    onCheckedChange={(imageTint) => update({ imageTint })}
+                  />
+                  <span className="gobo-check-name">Tint</span>
+                  <span className="gobo-check-value">{settings.imageTint ? "On" : "Off"}</span>
+                </Label>
+              ) : null}
+
+              {!imageMode || settings.imageTint ? (
               <div className="gobo-colors">
                 <div className="gobo-field">
-                  <Label htmlFor="gobo-color" className="gobo-field-label gobo-stack-label">
-                    Color
+                    <Label htmlFor="gobo-color" className="gobo-field-label gobo-stack-label">
+                    {imageMode ? "Tint color" : "Color"}
                     <span>{settings.color}</span>
                   </Label>
                   <Input
                     id="gobo-color"
                     type="color"
                     value={settings.color}
-                    aria-label="Text color"
+                    aria-label={imageMode ? "Tint color" : "Text color"}
                     onChange={(event) => update({ color: event.target.value })}
                   />
                 </div>
+                {imageMode ? null : (
                 <div className={`gobo-field ${settings.outline ? "" : "gobo-dimmed"}`}>
                   <Label htmlFor="gobo-outline-color" className="gobo-field-label gobo-stack-label">
                     Outline color
@@ -766,8 +1172,12 @@ export function GoboStage() {
                     onChange={(event) => update({ outlineColor: event.target.value })}
                   />
                 </div>
+                )}
               </div>
+              ) : null}
 
+              {imageMode ? null : (
+              <>
               <Label className="gobo-check" htmlFor="gobo-outline">
                 <Switch
                   id="gobo-outline"
@@ -802,9 +1212,12 @@ export function GoboStage() {
                 value={settings.glow}
                 onChange={(glow) => update({ glow })}
               />
+              </>
+              )}
             </PanelSection>
 
             <PanelSection
+              className="gobo-col-motion"
               title="Motion"
               value={settings.spin === 0 ? "Stopped" : formatSpeed(settings.spin)}
               changed={sectionChanged(settings, ["spin", "rotation"])}
@@ -828,11 +1241,13 @@ export function GoboStage() {
                   />
                 </div>
                 <p className="gobo-speed" data-testid="angle-readout">
-                  {angleCaption(settings.rotation, settings.spin)}
-                </p>
+                {angleCaption(settings.rotation, settings.spin)}
+              </p>
               </div>
             </PanelSection>
+            </div>
 
+            <div className="gobo-col-foot">
             <div className="gobo-field">
               <Button type="button" variant="secondary" className="gobo-menu-btn" onClick={toggleFullscreen}>
                 Fullscreen
@@ -845,8 +1260,9 @@ export function GoboStage() {
               right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add {SPIN_STEP}°/s and can
               reverse it. At zero speed the gobo holds its angle. While a control is focused, those keys stay
               with it. The panel hides after 4 seconds of quiet, and every change is kept in this browser.
-              Clear the text for a pure black frame.
+              Choose Image to project a picture. Clear the text, or the picture, for a pure black frame.
             </p>
+            </div>
           </div>
         </div>
       ) : null}
@@ -886,13 +1302,97 @@ function sectionChanged(settings: GoboSettings, keys: readonly (keyof GoboSettin
   return keys.some((key) => settings[key] !== defaultSettings[key]);
 }
 
+function keySummary(settings: GoboSettings) {
+  const parts: string[] = [];
+  if (settings.lumaKey) parts.push(settings.lumaInvert ? "Luma light" : "Luma dark");
+  if (settings.chromaKey) parts.push("Chroma");
+  if (settings.imageTint) parts.push("Tint");
+  return parts.length > 0 ? parts.join(" · ") : "Off";
+}
+
+function ImageSource({
+  name,
+  error,
+  ready,
+  fileRef,
+  previewRef,
+  onPickFile,
+  onFile,
+  onClear,
+  onSample,
+}: {
+  name: string;
+  error: string;
+  ready: boolean;
+  fileRef: RefObject<HTMLInputElement | null>;
+  previewRef: RefObject<HTMLCanvasElement | null>;
+  onPickFile: () => void;
+  onFile: (file: File) => void;
+  onClear: () => void;
+  onSample: (color: string) => void;
+}) {
+  return (
+    <div className="gobo-image">
+      <input
+        id="gobo-file"
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.svg"
+        className="gobo-file"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) onFile(file);
+        }}
+      />
+      {ready ? (
+        <canvas
+          ref={previewRef}
+          className="gobo-preview"
+          aria-label="Picture preview. Click a pixel to set the chroma key color."
+          onClick={(event) => {
+            const canvas = event.currentTarget;
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.min(
+              canvas.width - 1,
+              Math.max(0, Math.floor(((event.clientX - rect.left) / rect.width) * canvas.width)),
+            );
+            const y = Math.min(
+              canvas.height - 1,
+              Math.max(0, Math.floor(((event.clientY - rect.top) / rect.height) * canvas.height)),
+            );
+            const pixel = canvas.getContext("2d")?.getImageData(x, y, 1, 1).data;
+            if (!pixel) return;
+            onSample(rgbToHex(pixel[0], pixel[1], pixel[2]));
+          }}
+        />
+      ) : (
+        <p className="gobo-speed">No picture yet. PNG, JPG, WebP, GIF, or SVG.</p>
+      )}
+      <div className="gobo-image-actions">
+        <Button type="button" variant="secondary" className="gobo-menu-btn" onClick={onPickFile}>
+          {ready ? "Replace" : "Upload"}
+        </Button>
+        <Button type="button" variant="secondary" className="gobo-menu-btn" onClick={onClear} disabled={!ready && !name}>
+          Clear
+        </Button>
+      </div>
+      {name ? <p className="gobo-speed">{name}</p> : null}
+      {error ? <p className="gobo-error">{error}</p> : null}
+      {ready ? <p className="gobo-speed">Click the picture to pick the key color.</p> : null}
+    </div>
+  );
+}
+
 function PanelSection({
+  className,
   title,
   value,
   changed,
   onReset,
   children,
 }: {
+  className?: string;
   title: string;
   value: string;
   changed: boolean;
@@ -900,7 +1400,7 @@ function PanelSection({
   children: ReactNode;
 }) {
   return (
-    <section className="gobo-section" aria-label={title}>
+    <section className={className ? `gobo-section ${className}` : "gobo-section"} aria-label={title}>
       <div className="gobo-section-head">
         <h3>{title}</h3>
         <span className="gobo-section-value">{value}</span>

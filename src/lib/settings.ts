@@ -32,6 +32,7 @@ export const SPIN_MAX = 180;
 
 export type TextAlign = "left" | "center" | "right";
 export type ProjectionSurface = "floor" | "wall";
+export type GoboSource = "text" | "image";
 
 export type GoboSettings = {
   text: string;
@@ -68,6 +69,27 @@ export type GoboSettings = {
   projectorSpotHeight: number;
   /** Always floor. Older saves that stored wall are migrated on load. */
   surface: ProjectionSurface;
+  /** Text draws the words. Image projects an uploaded picture. */
+  source: GoboSource;
+  /** File name of the picture kept in IndexedDB. Empty when none is stored. */
+  imageName: string;
+  lumaKey: boolean;
+  /** 0–100. Dark pixels below this drop out, unless invert is on. */
+  lumaThreshold: number;
+  /** 0–100. Width of the fade at the threshold. */
+  lumaSoftness: number;
+  /** Knock out light pixels instead of dark ones. */
+  lumaInvert: boolean;
+  chromaKey: boolean;
+  chromaColor: string;
+  /** 0–100. How far a color can be from the key and still drop out. */
+  chromaTolerance: number;
+  /** 0–100. Width of the fade at the edge of the key. */
+  chromaSoftness: number;
+  /** 0–100. Pulls the key color out of the pixels that remain. */
+  chromaSpill: number;
+  /** Recolor the picture with the Color setting. */
+  imageTint: boolean;
 };
 
 export const defaultSettings: GoboSettings = {
@@ -91,6 +113,18 @@ export const defaultSettings: GoboSettings = {
   projectorSpot: "floor",
   projectorSpotHeight: 0,
   surface: "floor",
+  source: "text",
+  imageName: "",
+  lumaKey: false,
+  lumaThreshold: 12,
+  lumaSoftness: 10,
+  lumaInvert: false,
+  chromaKey: false,
+  chromaColor: "#00ff00",
+  chromaTolerance: 32,
+  chromaSoftness: 12,
+  chromaSpill: 40,
+  imageTint: false,
 };
 
 /** Wrap any angle into the slider range. +180 stays on the clockwise end. */
@@ -149,6 +183,21 @@ export function sanitizeSettings(input: unknown): GoboSettings {
     spin: round(clamp(raw.spin, SPIN_MIN, SPIN_MAX, defaultSettings.spin), 1),
     ...readPlacement(raw),
     surface: "floor",
+    source: raw.source === "image" ? "image" : "text",
+    imageName: typeof raw.imageName === "string" ? raw.imageName.slice(0, 180) : "",
+    lumaKey: raw.lumaKey === true,
+    lumaThreshold: round(clamp(raw.lumaThreshold, 0, 100, defaultSettings.lumaThreshold), 0),
+    lumaSoftness: round(clamp(raw.lumaSoftness, 0, 100, defaultSettings.lumaSoftness), 0),
+    lumaInvert: raw.lumaInvert === true,
+    chromaKey: raw.chromaKey === true,
+    chromaColor:
+      typeof raw.chromaColor === "string" && HEX.test(raw.chromaColor)
+        ? raw.chromaColor.toLowerCase()
+        : defaultSettings.chromaColor,
+    chromaTolerance: round(clamp(raw.chromaTolerance, 0, 100, defaultSettings.chromaTolerance), 0),
+    chromaSoftness: round(clamp(raw.chromaSoftness, 0, 100, defaultSettings.chromaSoftness), 0),
+    chromaSpill: round(clamp(raw.chromaSpill, 0, 100, defaultSettings.chromaSpill), 0),
+    imageTint: raw.imageTint === true,
   };
 }
 

@@ -520,6 +520,167 @@ html:-webkit-full-screen body {
   line-height: 1.45;
 }
 
+.gobo-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-bottom: 0.65rem;
+}
+
+.gobo-choice-btn {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: transparent;
+  color: #cbd5e1;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.gobo-choice-btn[aria-pressed="true"] {
+  border-color: #6366f1;
+  background: #312e81;
+  color: #f8fafc;
+}
+
+.gobo-choice-btn:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.gobo-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.gobo-image-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+
+.gobo-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.gobo-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 120px;
+  margin: 0 0 0.45rem;
+  border-radius: 8px;
+  background: #020617;
+  cursor: crosshair;
+  object-fit: contain;
+}
+
+.gobo-col-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.gobo-error {
+  margin: 0.15rem 0 0.4rem;
+  color: #fda4af;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+@media (min-width: 800px) {
+  .gobo-panel {
+    width: min(68rem, calc(100vw - 1.5rem));
+    max-height: calc(100dvh - 1.5rem);
+  }
+
+  .gobo-panel-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "projection source"
+      "side side"
+      "foot foot";
+    gap: 0.5rem 0.7rem;
+    align-items: start;
+  }
+
+  .gobo-panel-body:has(.gobo-col-key) {
+    grid-template-areas:
+      "projection source"
+      "key side"
+      "foot foot";
+  }
+
+  .gobo-section {
+    margin-bottom: 0;
+  }
+
+  .gobo-col-projection { grid-area: projection; }
+  .gobo-col-source { grid-area: source; }
+  .gobo-col-key { grid-area: key; }
+  .gobo-col-side { grid-area: side; }
+  .gobo-col-foot { grid-area: foot; }
+}
+
+@media (min-width: 1100px) {
+  .gobo-panel-body {
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "projection source side"
+      "foot foot foot";
+  }
+
+  .gobo-panel-body:has(.gobo-col-key) {
+    grid-template-areas:
+      "projection source key"
+      "projection side key"
+      "foot foot foot";
+  }
+}
+
+@media (min-width: 800px) and (max-height: 820px) {
+  .gobo-panel-head {
+    padding: 0.45rem 0.75rem 0.15rem;
+  }
+
+  .gobo-panel-body {
+    padding: 0.2rem 0.75rem 0.4rem;
+    gap: 0.35rem 0.55rem;
+  }
+
+  .gobo-section {
+    padding: 0.35rem 0.5rem 0.05rem;
+  }
+
+  .gobo-field {
+    margin-bottom: 0.4rem;
+  }
+
+  .gobo-choice,
+  .gobo-section-head {
+    margin-bottom: 0.35rem;
+  }
+
+  .gobo-hint,
+  .gobo-col-projection .gobo-speed {
+    display: none;
+  }
+}
+
 .gobo-panel button,
 .gobo-panel [role="slider"],
 .gobo-panel label {
