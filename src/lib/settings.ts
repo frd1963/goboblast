@@ -36,11 +36,10 @@ export type GoboSettings = {
   spin: number;
   /**
    * Beam angle in degrees, 0 to 90.
-   * On the floor, 0 is a horizontal beam with full keystone, and 90 points straight down with none.
-   * On a wall, 0 aims straight at the surface and higher values pitch off that aim.
+   * 90° faces the surface straight on with no skew. Lower angles hit it more obliquely.
    */
   projectorAngle: number;
-  /** Floor is the default. Wall is a vertical surface. */
+  /** Always floor. Older saves that stored wall are migrated on load. */
   surface: ProjectionSurface;
 };
 
@@ -120,7 +119,7 @@ export function sanitizeSettings(input: unknown): GoboSettings {
       clamp(raw.projectorAngle, PROJECTOR_MIN, PROJECTOR_MAX, defaultSettings.projectorAngle),
       0,
     ),
-    surface: raw.surface === "wall" ? "wall" : "floor",
+    surface: "floor",
   };
 }
 

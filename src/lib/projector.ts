@@ -1,20 +1,17 @@
 /**
  * Beam angle, in degrees, from 0 to 90.
- * Floor: 0 is a horizontal beam and gets the full keystone. 90 points straight down and has no skew.
- * Wall: 0 aims straight at the surface with no skew. 90 is pitched fully off that aim.
+ * 90° faces the surface straight on and has no skew. Lower angles hit it more obliquely
+ * and keystone more. 0° is the strongest taper.
  * The far edge is the top of the gobo. It narrows so the mark lands square on the surface.
  *
  * The gobo is rotated rigidly inside a fixed square, then this one homography is applied
- * to that whole square. The homography depends on the surface, the projector angle, and
- * the square's size. It does not depend on the rotation. On the floor or wall the word
- * stays a constant size. On the screen, a strong keystone still changes the shape as the
- * word swings through the taper — that variation is the projection, not a size change.
+ * to that whole square. The homography depends on the projector angle and the square's
+ * size. It does not depend on the rotation. On the surface the word stays a constant size.
+ * On the screen, a strong keystone still changes the shape as the word swings through the
+ * taper — that variation is the projection, not a size change.
  */
 export const PROJECTOR_MIN = 0;
 export const PROJECTOR_MAX = 90;
-
-/** Perspective tilt at full wall keystone. Short of edge-on, so the gobo stays visible. */
-const FULL_TILT_DEGREES = 72;
 
 const FIT_MARGIN_PX = 28;
 
@@ -45,8 +42,8 @@ export type Keystone = {
 const IDENTITY: HomographyMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 /**
- * Far-edge width divided by near-edge width for a beam depressed by `angleDeg`.
- * 90° (straight down) is 1. A horizontal beam is the strongest taper.
+ * Far-edge width divided by near-edge width for a beam at `angleDeg`.
+ * 90° (straight on) is 1. A grazing beam is the strongest taper.
  * The gobo keeps a fixed share of the throw, so the footprint is the perspective
  * projection of a floor rectangle: (1 - μ cos²θ) / (1 + μ cos²θ).
  */
@@ -91,12 +88,12 @@ export function invertHomography(matrix: readonly number[]): HomographyMatrix {
 }
 
 /**
- * One keystone for the current surface and projector angle.
+ * One keystone for the current projector angle.
  * `cssSize` is the edge of the unrotated square. The viewport only scales that
  * whole projection down so the square stays on stage. Rotation is not an input.
+ * This is always the floor throw, including when the panel draws the surface as a wall.
  */
 export function keystoneFor(
-  surface: "floor" | "wall",
   angleDeg: number,
   cssSize: number,
   viewportWidth: number,
@@ -105,11 +102,6 @@ export function keystoneFor(
   const center = "translate(-50%, -50%)";
   if (!(cssSize > 0)) return { matrix: IDENTITY, css: center };
   const angle = clampAngle(angleDeg);
-  if (surface === "wall") {
-    const tilt = (angle / PROJECTOR_MAX) * FULL_TILT_DEGREES;
-    if (tilt < 0.05) return { matrix: IDENTITY, css: center };
-    return perspectiveKeystone(cssSize, tilt, Math.max(cssSize * 0.7, 1), viewportWidth, viewportHeight);
-  }
   const ratio = floorKeystoneRatio(angle);
   if (ratio > 0.999) return { matrix: IDENTITY, css: center };
   const k = (1 - ratio) / (1 + ratio);

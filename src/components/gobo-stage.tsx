@@ -166,7 +166,6 @@ export function GoboStage() {
     const cssSize = cssSizeRef.current;
     if (!(cssSize > 0)) return;
     const placed = keystoneFor(
-      settingsRef.current.surface,
       settingsRef.current.projectorAngle,
       cssSize,
       window.innerWidth,
@@ -174,7 +173,7 @@ export function GoboStage() {
     );
     canvas.dataset.homography = JSON.stringify(placed.matrix);
     canvas.dataset.projector = String(settingsRef.current.projectorAngle);
-    canvas.dataset.surface = settingsRef.current.surface;
+    canvas.dataset.surface = "floor";
     if (placementRef.current === placed.css) return;
     placementRef.current = placed.css;
     canvas.style.transform = placed.css;
@@ -379,6 +378,13 @@ export function GoboStage() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  useEffect(() => {
+    if (settings.surface === "floor") return;
+    update({ surface: "floor" });
+    // Older saves stored a wall throw. The picture is always the floor keystone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.surface]);
 
   useEffect(() => {
     shownFrameRef.current = -1;
@@ -751,54 +757,21 @@ export function GoboStage() {
 
             <PanelSection
               title="Projection"
-              value={`${settings.surface === "floor" ? "Floor" : "Wall"} · ${formatDegrees(settings.projectorAngle)}`}
-              changed={sectionChanged(settings, ["surface", "projectorAngle"])}
-              onReset={() =>
-                update({
-                  surface: defaultSettings.surface,
-                  projectorAngle: defaultSettings.projectorAngle,
-                })
-              }
+              value={formatDegrees(settings.projectorAngle)}
+              changed={sectionChanged(settings, ["projectorAngle"])}
+              onReset={() => update({ projectorAngle: defaultSettings.projectorAngle })}
             >
-              <div className="gobo-field">
-                <Label className="gobo-field-label" id="gobo-surface-label">
-                  Surface
-                  <span>{settings.surface === "floor" ? "Floor" : "Wall"}</span>
-                </Label>
-                <div className="gobo-surface" role="group" aria-labelledby="gobo-surface-label">
-                  <Button
-                    type="button"
-                    variant={settings.surface === "floor" ? "default" : "secondary"}
-                    aria-pressed={settings.surface === "floor"}
-                    onClick={() => update({ surface: "floor" })}
-                  >
-                    Floor
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={settings.surface === "wall" ? "default" : "secondary"}
-                    aria-pressed={settings.surface === "wall"}
-                    onClick={() => update({ surface: "wall" })}
-                  >
-                    Wall
-                  </Button>
-                </div>
-              </div>
-
               <div className="gobo-field">
                 <Label htmlFor="gobo-projector" className="gobo-field-label">
                   Angle
                   <span>{formatDegrees(settings.projectorAngle)}</span>
                 </Label>
                 <ProjectorDial
-                  surface={settings.surface}
                   angle={settings.projectorAngle}
                   onChange={(projectorAngle) => update({ projectorAngle })}
                 />
                 <p className="gobo-speed">
-                  {settings.surface === "floor"
-                    ? "Drag the beam. 0° skims the floor. 90° points straight down."
-                    : "Drag the beam. 0° aims straight at the wall. 90° pitches up."}
+                  Drag the beam. 90° faces the wall straight on. Lower angles hit it more obliquely.
                 </p>
                 <Slider
                   id="gobo-projector"
