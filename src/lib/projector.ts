@@ -91,7 +91,7 @@ export function invertHomography(matrix: readonly number[]): HomographyMatrix {
  * One keystone for the current projector angle.
  * `cssSize` is the edge of the unrotated square. The viewport only scales that
  * whole projection down so the square stays on stage. Rotation is not an input.
- * This is always the floor throw, including when the panel draws the surface as a wall.
+ * This is always the floor throw. The diagram's angle is the beam's angle down to the floor spot.
  */
 export function keystoneFor(
   angleDeg: number,

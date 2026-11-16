@@ -1,5 +1,18 @@
 import { getFont } from "@/lib/fonts";
-import { PROJECTOR_MAX, PROJECTOR_MIN } from "@/lib/projector";
+import {
+  DEFAULT_AIM,
+  DEFAULT_DISTANCE,
+  DEFAULT_HEIGHT,
+  DEFAULT_PROJECTOR_ANGLE,
+  AIM_MAX,
+  AIM_MIN,
+  DISTANCE_MAX,
+  DISTANCE_MIN,
+  HEIGHT_MAX,
+  HEIGHT_MIN,
+  angleFromPlacement,
+  placementForAngle,
+} from "@/lib/placement";
 
 export const STORAGE_KEY = "goboblast-settings";
 
@@ -36,9 +49,16 @@ export type GoboSettings = {
   spin: number;
   /**
    * Beam angle in degrees, 0 to 90.
-   * 90° faces the surface straight on with no skew. Lower angles hit it more obliquely.
+   * Derived from the projector's position and the floor spot: 90° is straight down
+   * onto that spot, and lower angles hit the floor more obliquely.
    */
   projectorAngle: number;
+  /** 0 is against the wall, 1 is the far side of the room. */
+  projectorDistance: number;
+  /** 0 is on the floor, 1 is at the ceiling. */
+  projectorHeight: number;
+  /** Floor spot the beam aims at, in the same 0–1 distance as the projector. */
+  projectorAim: number;
   /** Always floor. Older saves that stored wall are migrated on load. */
   surface: ProjectionSurface;
 };
@@ -57,7 +77,10 @@ export const defaultSettings: GoboSettings = {
   glow: 0,
   rotation: 0,
   spin: 0,
-  projectorAngle: 0,
+  projectorAngle: DEFAULT_PROJECTOR_ANGLE,
+  projectorDistance: DEFAULT_DISTANCE,
+  projectorHeight: DEFAULT_HEIGHT,
+  projectorAim: DEFAULT_AIM,
   surface: "floor",
 };
 
@@ -115,12 +138,39 @@ export function sanitizeSettings(input: unknown): GoboSettings {
       1,
     ),
     spin: round(clamp(raw.spin, SPIN_MIN, SPIN_MAX, defaultSettings.spin), 1),
-    projectorAngle: round(
-      clamp(raw.projectorAngle, PROJECTOR_MIN, PROJECTOR_MAX, defaultSettings.projectorAngle),
-      0,
-    ),
+    ...readPlacement(raw),
     surface: "floor",
   };
+}
+
+function readPlacement(raw: Partial<GoboSettings>) {
+  const distance = finite(raw.projectorDistance);
+  const height = finite(raw.projectorHeight);
+  const aim = finite(raw.projectorAim);
+  if (distance === null || height === null || aim === null) {
+    const saved = finite(raw.projectorAngle);
+    const placed = placementForAngle(saved === null ? defaultSettings.projectorAngle : saved);
+    return {
+      projectorDistance: placed.distance,
+      projectorHeight: placed.height,
+      projectorAim: placed.aim,
+      projectorAngle: placed.angle,
+    };
+  }
+  const projectorDistance = round(clamp(distance, DISTANCE_MIN, DISTANCE_MAX, defaultSettings.projectorDistance), 3);
+  const projectorHeight = round(clamp(height, HEIGHT_MIN, HEIGHT_MAX, defaultSettings.projectorHeight), 3);
+  const projectorAim = round(clamp(aim, AIM_MIN, AIM_MAX, defaultSettings.projectorAim), 3);
+  return {
+    projectorDistance,
+    projectorHeight,
+    projectorAim,
+    projectorAngle: angleFromPlacement(projectorDistance, projectorHeight, projectorAim),
+  };
+}
+
+function finite(value: unknown) {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 export function loadSettings(): GoboSettings {

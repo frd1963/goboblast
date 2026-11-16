@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ProjectorDial } from "@/components/projector-dial";
 import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
+import { aimForAngle, angleFromPlacement } from "@/lib/placement";
 import { PROJECTOR_MAX, PROJECTOR_MIN, keystoneFor } from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
@@ -239,7 +240,13 @@ export function GoboStage() {
     settingsRef.current = next;
     setSettings(next);
     saveSettings(next);
-    if (patch.projectorAngle !== undefined || patch.surface !== undefined) {
+    if (
+      patch.projectorAngle !== undefined ||
+      patch.projectorDistance !== undefined ||
+      patch.projectorHeight !== undefined ||
+      patch.projectorAim !== undefined ||
+      patch.surface !== undefined
+    ) {
       shownFrameRef.current = -1;
       paintFrame();
     }
@@ -758,8 +765,20 @@ export function GoboStage() {
             <PanelSection
               title="Projection"
               value={formatDegrees(settings.projectorAngle)}
-              changed={sectionChanged(settings, ["projectorAngle"])}
-              onReset={() => update({ projectorAngle: defaultSettings.projectorAngle })}
+              changed={sectionChanged(settings, [
+                "projectorAngle",
+                "projectorDistance",
+                "projectorHeight",
+                "projectorAim",
+              ])}
+              onReset={() =>
+                update({
+                  projectorAngle: defaultSettings.projectorAngle,
+                  projectorDistance: defaultSettings.projectorDistance,
+                  projectorHeight: defaultSettings.projectorHeight,
+                  projectorAim: defaultSettings.projectorAim,
+                })
+              }
             >
               <div className="gobo-field">
                 <Label htmlFor="gobo-projector" className="gobo-field-label">
@@ -767,11 +786,34 @@ export function GoboStage() {
                   <span>{formatDegrees(settings.projectorAngle)}</span>
                 </Label>
                 <ProjectorDial
+                  distance={settings.projectorDistance}
+                  height={settings.projectorHeight}
+                  aim={settings.projectorAim}
                   angle={settings.projectorAngle}
-                  onChange={(projectorAngle) => update({ projectorAngle })}
+                  onPosition={(projectorDistance, projectorHeight) => {
+                    const { projectorAim } = settingsRef.current;
+                    update({
+                      projectorDistance,
+                      projectorHeight,
+                      projectorAngle: angleFromPlacement(projectorDistance, projectorHeight, projectorAim),
+                    });
+                  }}
+                  onAim={(projectorAim) => {
+                    const { projectorDistance, projectorHeight } = settingsRef.current;
+                    update({
+                      projectorAim,
+                      projectorAngle: angleFromPlacement(projectorDistance, projectorHeight, projectorAim),
+                    });
+                  }}
+                  onAngle={(angle) => {
+                    const { projectorDistance, projectorHeight, projectorAim } = settingsRef.current;
+                    const placed = aimForAngle(projectorDistance, projectorHeight, angle, projectorAim);
+                    update({ projectorAim: placed.aim, projectorAngle: placed.angle });
+                  }}
                 />
                 <p className="gobo-speed">
-                  Drag the beam. 90° faces the wall straight on. Lower angles hit it more obliquely.
+                  Drag the projector to place it. Drag the floor spot or the slider to aim. 90° is straight
+                  down onto the floor.
                 </p>
                 <Slider
                   id="gobo-projector"
@@ -780,7 +822,16 @@ export function GoboStage() {
                   step={1}
                   value={[settings.projectorAngle]}
                   aria-label="Projector angle"
-                  onValueChange={(next) => update({ projectorAngle: sliderNumber(next) })}
+                  onValueChange={(next) => {
+                    const { projectorDistance, projectorHeight, projectorAim } = settingsRef.current;
+                    const placed = aimForAngle(
+                      projectorDistance,
+                      projectorHeight,
+                      sliderNumber(next),
+                      projectorAim,
+                    );
+                    update({ projectorAim: placed.aim, projectorAngle: placed.angle });
+                  }}
                 />
               </div>
             </PanelSection>
