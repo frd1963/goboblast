@@ -2,13 +2,13 @@
  * Side view of the room, in the diagram's viewBox pixels.
  * The wall is the left face and the floor is the bottom face. They meet at the corner.
  * Distance 0 is on the wall and 1 is the far side. Height 0 is on the floor and 1 is the ceiling.
- * The aim is a spot on the floor, in that same 0–1 distance.
+ * The aim is a spot on the floor, in that same 0–1 distance, until the beam is too
+ * shallow to reach the floor before the wall. Then the spot climbs the wall.
  *
- * The stored projector angle is the beam's angle above the floor, in whole degrees:
- *   atan2(height × room height, |distance − aim| × room width)
- * 90° is straight down onto the spot (no skew). A lower angle is a shallower beam and a
- * stronger floor keystone. Moving the projector keeps the spot and changes the angle.
- * The slider and the floor-spot drag move the spot so the beam matches the angle.
+ * The stored projector angle is the beam's angle above the floor, in whole degrees.
+ * 90° is straight down onto the floor. A lower angle is a shallower beam. On the floor
+ * that angle is the floor keystone. On the wall, straight on (0°, horizontal) has no
+ * skew, and a beam that drops onto the wall is oblique to it.
  */
 export const ROOM = {
   viewW: 300,
@@ -25,7 +25,7 @@ export const DISTANCE_MIN = 0.1;
 export const DISTANCE_MAX = 0.86;
 export const HEIGHT_MIN = 0.14;
 export const HEIGHT_MAX = 0.84;
-export const AIM_MIN = 0.04;
+export const AIM_MIN = 0;
 export const AIM_MAX = 0.96;
 
 export const DEFAULT_DISTANCE = 0.7;
@@ -75,6 +75,77 @@ export function angleFromPlacement(distance: number, height: number, aim: number
   const degrees = (Math.atan2(drop, run) * 180) / Math.PI;
   if (!Number.isFinite(degrees)) return 90;
   return Math.round(clamp(degrees, 0, 90));
+}
+
+export type BeamSpot =
+  | { surface: "floor"; aim: number }
+  | { surface: "wall"; height: number };
+
+/** Whole-degree angle of the beam from the projector down to the spot. */
+export function angleFromSpot(distance: number, height: number, spot: BeamSpot) {
+  if (spot.surface === "floor") return angleFromPlacement(distance, height, spot.aim);
+  const run = Math.max(distance, 0) * ROOM.width;
+  const drop = (height - spot.height) * ROOM.height;
+  if (!(run > 0.5)) return drop > 1 ? 90 : 0;
+  if (!(drop > 0)) return 0;
+  const degrees = (Math.atan2(drop, run) * 180) / Math.PI;
+  if (!Number.isFinite(degrees)) return 0;
+  return Math.round(clamp(degrees, 0, 90));
+}
+
+/** Raise or lower the wall spot until the rounded angle matches. */
+function nudgeWall(distance: number, height: number, wanted: number, seed: number) {
+  let spotHeight = round3(clamp(seed, 0, height));
+  for (let step = 0; step < 50; step += 1) {
+    const angle = angleFromSpot(distance, height, { surface: "wall", height: spotHeight });
+    if (angle === wanted) return { spot: { surface: "wall" as const, height: spotHeight }, angle };
+    const next = round3(spotHeight + (angle > wanted ? 0.002 : -0.002));
+    if (next < 0 || next > height || next === spotHeight) {
+      return { spot: { surface: "wall" as const, height: spotHeight }, angle };
+    }
+    spotHeight = next;
+  }
+  return {
+    spot: { surface: "wall" as const, height: spotHeight },
+    angle: angleFromSpot(distance, height, { surface: "wall", height: spotHeight }),
+  };
+}
+
+/**
+ * Place the spot so the beam matches `angle`. Toward the wall, a beam that would
+ * cross the wall face before the floor lands on the wall. The other way, it stays
+ * on the floor.
+ */
+export function spotForAngle(distance: number, height: number, angle: number, towardWall: boolean) {
+  const wanted = clamp(Math.round(angle), 0, 90);
+  const from = clampDistance(distance);
+  const up = clampHeight(height);
+  if (wanted >= 90) {
+    const aim = clampAim(from);
+    return { spot: { surface: "floor" as const, aim }, angle: angleFromPlacement(from, up, aim) };
+  }
+  if (!towardWall) {
+    const floor = aimForAngle(from, up, wanted, AIM_MAX);
+    return { spot: { surface: "floor" as const, aim: floor.aim }, angle: floor.angle };
+  }
+  const drop = up * ROOM.height;
+  const runNorm = drop / Math.tan((wanted * Math.PI) / 180) / ROOM.width;
+  const aim = from - runNorm;
+  if (aim >= 0) {
+    const snapped = nudgeAim(from, up, wanted, aim);
+    if (snapped.angle === wanted || aim > 0.02) {
+      return { spot: { surface: "floor" as const, aim: snapped.aim }, angle: snapped.angle };
+    }
+  }
+  const hitDrop = from * ROOM.width * Math.tan((wanted * Math.PI) / 180);
+  const seed = (up * ROOM.height - hitDrop) / ROOM.height;
+  return nudgeWall(from, up, wanted, seed);
+}
+
+/** Keep a wall spot from sitting above the projector, which would aim the beam upward. */
+export function clampSpot(height: number, spot: BeamSpot): BeamSpot {
+  if (spot.surface === "floor") return { surface: "floor", aim: clampAim(spot.aim) };
+  return { surface: "wall", height: round3(clamp(spot.height, 0, height)) };
 }
 
 export const DEFAULT_PROJECTOR_ANGLE = angleFromPlacement(

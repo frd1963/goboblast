@@ -18,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ProjectorDial } from "@/components/projector-dial";
 import { frameIndex, renderGoboFrames } from "@/lib/gobo-frames";
-import { aimForAngle, angleFromPlacement } from "@/lib/placement";
+import { angleFromSpot, clampSpot, spotForAngle, type BeamSpot } from "@/lib/placement";
 import { PROJECTOR_MAX, PROJECTOR_MIN, keystoneFor } from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
@@ -135,7 +135,7 @@ export function GoboStage() {
     if (!canvas || frames.length === 0) return;
     const index = frameIndex(angleRef.current);
     const cssSize = cssSizeRef.current;
-    const stamp = `${settingsRef.current.surface}:${settingsRef.current.projectorAngle}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
+    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.projectorAngle}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
     if (index === shownFrameRef.current && canvas.dataset.placement === stamp) return;
     const bitmap = frames[index];
     if (!bitmap) return;
@@ -166,14 +166,17 @@ export function GoboStage() {
     if (!canvas) return;
     const cssSize = cssSizeRef.current;
     if (!(cssSize > 0)) return;
+    const target = settingsRef.current.projectorSpot === "wall" ? "wall" : "floor";
     const placed = keystoneFor(
       settingsRef.current.projectorAngle,
       cssSize,
       window.innerWidth,
       window.innerHeight,
+      target,
     );
     canvas.dataset.homography = JSON.stringify(placed.matrix);
     canvas.dataset.projector = String(settingsRef.current.projectorAngle);
+    canvas.dataset.keystone = target;
     canvas.dataset.surface = "floor";
     if (placementRef.current === placed.css) return;
     placementRef.current = placed.css;
@@ -245,12 +248,21 @@ export function GoboStage() {
       patch.projectorDistance !== undefined ||
       patch.projectorHeight !== undefined ||
       patch.projectorAim !== undefined ||
+      patch.projectorSpot !== undefined ||
+      patch.projectorSpotHeight !== undefined ||
       patch.surface !== undefined
     ) {
       shownFrameRef.current = -1;
       paintFrame();
     }
     if (openRef.current) scheduleHide();
+  }
+
+  function aimAt(angle: number) {
+    const current = settingsRef.current;
+    const towardWall = current.projectorSpot === "wall" || current.projectorAim <= current.projectorDistance;
+    const placed = spotForAngle(current.projectorDistance, current.projectorHeight, angle, towardWall);
+    update(withSpot(current.projectorDistance, current.projectorHeight, placed.spot));
   }
 
   useEffect(() => {
@@ -398,7 +410,7 @@ export function GoboStage() {
     paintFrame();
     // Redraws through refs when the throw changes. The spin loop is separate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.projectorAngle, settings.surface, viewport.w, viewport.h]);
+  }, [settings.projectorAngle, settings.projectorSpot, settings.surface, viewport.w, viewport.h]);
 
   const frameKey = [
     settings.text,
@@ -486,6 +498,7 @@ export function GoboStage() {
       data-panel={open ? "open" : "closed"}
       data-spin={settings.spin}
       data-projector={settings.projectorAngle}
+      data-keystone={settings.projectorSpot}
       data-surface={settings.surface}
       onPointerDown={(event) => {
         const target = event.target;
@@ -526,6 +539,64 @@ export function GoboStage() {
             </Button>
           </div>
           <div className="gobo-panel-body">
+            <PanelSection
+              title="Projection"
+              value={formatDegrees(settings.projectorAngle)}
+              changed={sectionChanged(settings, [
+                "projectorAngle",
+                "projectorDistance",
+                "projectorHeight",
+                "projectorAim",
+                "projectorSpot",
+                "projectorSpotHeight",
+              ])}
+              onReset={() =>
+                update({
+                  projectorAngle: defaultSettings.projectorAngle,
+                  projectorDistance: defaultSettings.projectorDistance,
+                  projectorHeight: defaultSettings.projectorHeight,
+                  projectorAim: defaultSettings.projectorAim,
+                  projectorSpot: defaultSettings.projectorSpot,
+                  projectorSpotHeight: defaultSettings.projectorSpotHeight,
+                })
+              }
+            >
+              <div className="gobo-field">
+                <Label htmlFor="gobo-projector" className="gobo-field-label">
+                  Angle
+                  <span>{formatDegrees(settings.projectorAngle)}</span>
+                </Label>
+                <ProjectorDial
+                  distance={settings.projectorDistance}
+                  height={settings.projectorHeight}
+                  spot={spotOf(settings)}
+                  angle={settings.projectorAngle}
+                  onPosition={(projectorDistance, projectorHeight) => {
+                    const current = settingsRef.current;
+                    update(withSpot(projectorDistance, projectorHeight, spotOf(current)));
+                  }}
+                  onSpot={(spot) => {
+                    const { projectorDistance, projectorHeight } = settingsRef.current;
+                    update(withSpot(projectorDistance, projectorHeight, spot));
+                  }}
+                  onAngle={(angle) => aimAt(angle)}
+                />
+                <p className="gobo-speed">
+                  Drag the projector to place it. Drag the spot or the slider to aim. A shallow beam hits the
+                  wall. 90° is straight down on the floor.
+                </p>
+                <Slider
+                  id="gobo-projector"
+                  min={PROJECTOR_MIN}
+                  max={PROJECTOR_MAX}
+                  step={1}
+                  value={[settings.projectorAngle]}
+                  aria-label="Projector angle"
+                  onValueChange={(next) => aimAt(sliderNumber(next))}
+                />
+              </div>
+            </PanelSection>
+
             <PanelSection
               title="Text"
               value={font.label}
@@ -762,80 +833,6 @@ export function GoboStage() {
               </div>
             </PanelSection>
 
-            <PanelSection
-              title="Projection"
-              value={formatDegrees(settings.projectorAngle)}
-              changed={sectionChanged(settings, [
-                "projectorAngle",
-                "projectorDistance",
-                "projectorHeight",
-                "projectorAim",
-              ])}
-              onReset={() =>
-                update({
-                  projectorAngle: defaultSettings.projectorAngle,
-                  projectorDistance: defaultSettings.projectorDistance,
-                  projectorHeight: defaultSettings.projectorHeight,
-                  projectorAim: defaultSettings.projectorAim,
-                })
-              }
-            >
-              <div className="gobo-field">
-                <Label htmlFor="gobo-projector" className="gobo-field-label">
-                  Angle
-                  <span>{formatDegrees(settings.projectorAngle)}</span>
-                </Label>
-                <ProjectorDial
-                  distance={settings.projectorDistance}
-                  height={settings.projectorHeight}
-                  aim={settings.projectorAim}
-                  angle={settings.projectorAngle}
-                  onPosition={(projectorDistance, projectorHeight) => {
-                    const { projectorAim } = settingsRef.current;
-                    update({
-                      projectorDistance,
-                      projectorHeight,
-                      projectorAngle: angleFromPlacement(projectorDistance, projectorHeight, projectorAim),
-                    });
-                  }}
-                  onAim={(projectorAim) => {
-                    const { projectorDistance, projectorHeight } = settingsRef.current;
-                    update({
-                      projectorAim,
-                      projectorAngle: angleFromPlacement(projectorDistance, projectorHeight, projectorAim),
-                    });
-                  }}
-                  onAngle={(angle) => {
-                    const { projectorDistance, projectorHeight, projectorAim } = settingsRef.current;
-                    const placed = aimForAngle(projectorDistance, projectorHeight, angle, projectorAim);
-                    update({ projectorAim: placed.aim, projectorAngle: placed.angle });
-                  }}
-                />
-                <p className="gobo-speed">
-                  Drag the projector to place it. Drag the floor spot or the slider to aim. 90° is straight
-                  down onto the floor.
-                </p>
-                <Slider
-                  id="gobo-projector"
-                  min={PROJECTOR_MIN}
-                  max={PROJECTOR_MAX}
-                  step={1}
-                  value={[settings.projectorAngle]}
-                  aria-label="Projector angle"
-                  onValueChange={(next) => {
-                    const { projectorDistance, projectorHeight, projectorAim } = settingsRef.current;
-                    const placed = aimForAngle(
-                      projectorDistance,
-                      projectorHeight,
-                      sliderNumber(next),
-                      projectorAim,
-                    );
-                    update({ projectorAim: placed.aim, projectorAngle: placed.angle });
-                  }}
-                />
-              </div>
-            </PanelSection>
-
             <div className="gobo-field">
               <Button type="button" variant="secondary" className="gobo-menu-btn" onClick={toggleFullscreen}>
                 Fullscreen
@@ -855,6 +852,34 @@ export function GoboStage() {
       ) : null}
     </main>
   );
+}
+
+function spotOf(settings: GoboSettings): BeamSpot {
+  if (settings.projectorSpot === "wall") return { surface: "wall", height: settings.projectorSpotHeight };
+  return { surface: "floor", aim: settings.projectorAim };
+}
+
+function withSpot(distance: number, height: number, spot: BeamSpot) {
+  const placed = clampSpot(height, spot);
+  const projectorAngle = angleFromSpot(distance, height, placed);
+  if (placed.surface === "wall") {
+    return {
+      projectorDistance: distance,
+      projectorHeight: height,
+      projectorAim: 0,
+      projectorSpot: "wall" as const,
+      projectorSpotHeight: placed.height,
+      projectorAngle,
+    };
+  }
+  return {
+    projectorDistance: distance,
+    projectorHeight: height,
+    projectorAim: placed.aim,
+    projectorSpot: "floor" as const,
+    projectorSpotHeight: 0,
+    projectorAngle,
+  };
 }
 
 function sectionChanged(settings: GoboSettings, keys: readonly (keyof GoboSettings)[]) {

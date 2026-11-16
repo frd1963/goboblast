@@ -1,7 +1,14 @@
 "use client";
 
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
-import { ROOM, angleFromPlacement, clampAim, clampDistance, clampHeight } from "@/lib/placement";
+import {
+  ROOM,
+  angleFromSpot,
+  clampAim,
+  clampDistance,
+  clampHeight,
+  type BeamSpot,
+} from "@/lib/placement";
 
 type Point = { x: number; y: number };
 type DragMode = "projector" | "aim";
@@ -13,8 +20,24 @@ function lensPoint(distance: number, height: number): Point {
   };
 }
 
-function aimPoint(aim: number): Point {
-  return { x: ROOM.wallFace + aim * ROOM.width, y: ROOM.floorFace };
+function spotPoint(spot: BeamSpot): Point {
+  if (spot.surface === "wall") {
+    return { x: ROOM.wallFace, y: ROOM.floorFace - spot.height * ROOM.height };
+  }
+  return { x: ROOM.wallFace + spot.aim * ROOM.width, y: ROOM.floorFace };
+}
+
+function spotFromPointer(point: Point, projectorHeight: number): BeamSpot {
+  const aboveFloor = point.y < ROOM.floorFace - 6;
+  const towardWall = point.x <= ROOM.wallFace + 20;
+  if (aboveFloor && towardWall) {
+    const ceiling = ROOM.floorFace - projectorHeight * ROOM.height;
+    const y = Math.min(ROOM.floorFace, Math.max(ceiling, point.y));
+    const spotHeight = Math.round(((ROOM.floorFace - y) / ROOM.height) * 1000) / 1000;
+    if (spotHeight <= 0.01) return { surface: "floor", aim: 0 };
+    return { surface: "wall", height: spotHeight };
+  }
+  return { surface: "floor", aim: clampAim((point.x - ROOM.wallFace) / ROOM.width) };
 }
 
 function beamDegrees(from: Point, to: Point) {
@@ -46,27 +69,27 @@ function conePoints(from: Point, to: Point, half: number) {
 export function ProjectorDial({
   distance,
   height,
-  aim,
+  spot,
   angle,
   onPosition,
-  onAim,
+  onSpot,
   onAngle,
 }: {
   distance: number;
   height: number;
-  aim: number;
+  spot: BeamSpot;
   angle: number;
   onPosition: (distance: number, height: number) => void;
-  onAim: (aim: number) => void;
+  onSpot: (spot: BeamSpot) => void;
   onAngle: (angle: number) => void;
 }) {
   const mode = useRef<DragMode | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const lens = lensPoint(distance, height);
-  const spot = aimPoint(aim);
-  const rotation = beamDegrees(lens, spot);
+  const spotAt = spotPoint(spot);
+  const rotation = beamDegrees(lens, spotAt);
   const shown = Math.round(angle);
-  const horizontal = spot.x < lens.x ? 180 : 0;
+  const horizontal = spotAt.x < lens.x ? 180 : 0;
   const span = Math.abs(rotation - horizontal);
   const arc = span > 2 && span < 88 ? arcPath(lens, horizontal, rotation, 24) : "";
 
@@ -80,14 +103,20 @@ export function ProjectorDial({
   }
 
   function chooseMode(point: Point): DragMode | null {
-    if (Math.hypot(point.x - spot.x, point.y - spot.y) <= 16) return "aim";
+    if (Math.hypot(point.x - spotAt.x, point.y - spotAt.y) <= 16) return "aim";
     if (Math.hypot(point.x - lens.x, point.y - lens.y) <= 26) return "projector";
     const onFloor =
       point.y >= ROOM.floorFace - 12 &&
       point.y <= ROOM.floorFace + 16 &&
-      point.x >= ROOM.wallFace &&
+      point.x >= ROOM.wallFace - 8 &&
       point.x <= ROOM.roomRight;
     if (onFloor) return "aim";
+    const onWall =
+      point.x <= ROOM.wallFace + 20 &&
+      point.x >= 8 &&
+      point.y >= ROOM.roomTop &&
+      point.y <= ROOM.floorFace;
+    if (onWall) return "aim";
     const inRoom =
       point.x >= ROOM.wallFace &&
       point.x <= ROOM.roomRight &&
@@ -109,9 +138,12 @@ export function ProjectorDial({
       onPosition(nextDistance, nextHeight);
       return;
     }
-    const nextAim = clampAim((point.x - ROOM.wallFace) / ROOM.width);
-    if (nextAim === aim) return;
-    onAim(nextAim);
+    const next = spotFromPointer(point, height);
+    if (next.surface === spot.surface) {
+      if (next.surface === "floor" && spot.surface === "floor" && next.aim === spot.aim) return;
+      if (next.surface === "wall" && spot.surface === "wall" && next.height === spot.height) return;
+    }
+    onSpot(next);
   }
 
   function onKeyDown(event: KeyboardEvent<SVGSVGElement>) {
@@ -167,15 +199,17 @@ export function ProjectorDial({
         className="gobo-dial-svg"
         viewBox={`0 0 ${ROOM.viewW} ${ROOM.viewH}`}
         role="slider"
-        aria-label="Projector angle. 90 degrees is straight down onto the floor. Lower angles hit it more obliquely. Drag the projector to move it, or the floor spot to aim."
+        aria-label="Projector angle. 90 degrees is straight down onto the floor. A beam that is too shallow to reach the floor hits the wall. Drag the projector to move it, or the spot to aim."
         aria-valuemin={0}
         aria-valuemax={90}
         aria-valuenow={shown}
         aria-valuetext={`${shown} degrees`}
         data-distance={distance}
         data-height={height}
-        data-aim={aim}
-        data-angle={angleFromPlacement(distance, height, aim)}
+        data-spot={spot.surface}
+        data-aim={spot.surface === "floor" ? spot.aim : 0}
+        data-spot-height={spot.surface === "wall" ? spot.height : 0}
+        data-angle={angleFromSpot(distance, height, spot)}
         tabIndex={0}
         onKeyDown={onKeyDown}
       >
@@ -224,25 +258,25 @@ export function ProjectorDial({
         <line
           x1={lens.x}
           y1={lens.y}
-          x2={lens.x + (spot.x < lens.x ? -18 : 18)}
+          x2={lens.x + (spotAt.x < lens.x ? -18 : 18)}
           y2={lens.y}
           stroke="#334155"
           strokeWidth="1"
           strokeDasharray="3 4"
         />
 
-        <polygon points={conePoints(lens, spot, 11)} fill="rgba(248, 250, 252, 0.16)" />
+        <polygon points={conePoints(lens, spotAt, 11)} fill="rgba(248, 250, 252, 0.16)" />
         <line
           x1={lens.x}
           y1={lens.y}
-          x2={spot.x}
-          y2={spot.y}
+          x2={spotAt.x}
+          y2={spotAt.y}
           stroke="#f8fafc"
           strokeWidth="1.6"
           strokeLinecap="round"
         />
         {arc ? <path d={arc} fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" /> : null}
-        <circle cx={spot.x} cy={spot.y} r="6" fill="#f8fafc" stroke="#6366f1" strokeWidth="2" />
+        <circle cx={spotAt.x} cy={spotAt.y} r="6" fill="#f8fafc" stroke="#6366f1" strokeWidth="2" />
 
         <g transform={`translate(${lens.x} ${lens.y}) rotate(${rotation})`}>
           <rect x={-32} y={-9} width={20} height={18} rx={3} fill="#0f172a" stroke="#cbd5e1" strokeWidth="1.5" />

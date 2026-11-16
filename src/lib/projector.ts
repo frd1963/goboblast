@@ -39,6 +39,9 @@ export type Keystone = {
   css: string;
 };
 
+/** Which surface the beam is hitting. The throw is measured against that surface. */
+export type KeystoneTarget = "floor" | "wall";
+
 const IDENTITY: HomographyMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 /**
@@ -88,27 +91,35 @@ export function invertHomography(matrix: readonly number[]): HomographyMatrix {
 }
 
 /**
- * One keystone for the current projector angle.
- * `cssSize` is the edge of the unrotated square. The viewport only scales that
- * whole projection down so the square stays on stage. Rotation is not an input.
- * This is always the floor throw. The diagram's angle is the beam's angle down to the floor spot.
+ * One keystone for the current beam.
+ * `angleDeg` is the beam's angle above the floor. `cssSize` is the edge of the
+ * unrotated square. The viewport only scales that whole projection down so the
+ * square stays on stage. Rotation is not an input.
+ *
+ * On the floor, 90° is straight down and has no skew. A lower angle hits the floor
+ * more obliquely. On the wall, 0° (horizontal, straight into the wall) has no skew.
+ * A beam that drops onto the wall is oblique to it, so the same throw sees the
+ * complement, and the bottom of the gobo narrows because that edge is farther from
+ * a projector sitting above the spot.
  */
 export function keystoneFor(
   angleDeg: number,
   cssSize: number,
   viewportWidth: number,
   viewportHeight: number,
+  target: KeystoneTarget = "floor",
 ): Keystone {
   const center = "translate(-50%, -50%)";
   if (!(cssSize > 0)) return { matrix: IDENTITY, css: center };
-  const angle = clampAngle(angleDeg);
-  const ratio = floorKeystoneRatio(angle);
+  const diagram = clampAngle(angleDeg);
+  const straightOn = target === "wall" ? clampAngle(90 - diagram) : diagram;
+  const ratio = floorKeystoneRatio(straightOn);
   if (ratio > 0.999) return { matrix: IDENTITY, css: center };
   const k = (1 - ratio) / (1 + ratio);
-  const tilt = Math.min(32, (1 - ratio) * 58);
-  const rad = (tilt * Math.PI) / 180;
-  const sin = Math.sin(rad);
-  if (tilt < 0.05 || !(sin > 1e-4) || !(k > 1e-4)) return { matrix: IDENTITY, css: center };
+  const magnitude = Math.min(32, (1 - ratio) * 58);
+  const tilt = (target === "wall" ? -1 : 1) * magnitude;
+  const sin = Math.sin((magnitude * Math.PI) / 180);
+  if (magnitude < 0.05 || !(sin > 1e-4) || !(k > 1e-4)) return { matrix: IDENTITY, css: center };
   const distance = Math.max(1, ((cssSize / 2) * sin) / k);
   return perspectiveKeystone(cssSize, tilt, distance, viewportWidth, viewportHeight);
 }

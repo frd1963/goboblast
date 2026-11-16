@@ -11,7 +11,9 @@ import {
   HEIGHT_MAX,
   HEIGHT_MIN,
   angleFromPlacement,
+  angleFromSpot,
   placementForAngle,
+  type BeamSpot,
 } from "@/lib/placement";
 
 export const STORAGE_KEY = "goboblast-settings";
@@ -48,17 +50,22 @@ export type GoboSettings = {
   /** Degrees per second. The slider sets this directly. Positive is clockwise. */
   spin: number;
   /**
-   * Beam angle in degrees, 0 to 90.
-   * Derived from the projector's position and the floor spot: 90° is straight down
-   * onto that spot, and lower angles hit the floor more obliquely.
+   * Beam angle in degrees, 0 to 90, above the floor.
+   * 90° is straight down. Lower angles are shallower. Derived from the projector
+   * position and the spot, which is on the floor or, when the beam reaches the wall
+   * first, on the wall.
    */
   projectorAngle: number;
   /** 0 is against the wall, 1 is the far side of the room. */
   projectorDistance: number;
   /** 0 is on the floor, 1 is at the ceiling. */
   projectorHeight: number;
-  /** Floor spot the beam aims at, in the same 0–1 distance as the projector. */
+  /** Floor spot, in the same 0–1 distance as the projector. Unused while the spot is on the wall. */
   projectorAim: number;
+  /** Surface the beam is hitting. */
+  projectorSpot: BeamSpot["surface"];
+  /** Height of a wall spot. 0 is the corner, 1 is the ceiling. */
+  projectorSpotHeight: number;
   /** Always floor. Older saves that stored wall are migrated on load. */
   surface: ProjectionSurface;
 };
@@ -81,6 +88,8 @@ export const defaultSettings: GoboSettings = {
   projectorDistance: DEFAULT_DISTANCE,
   projectorHeight: DEFAULT_HEIGHT,
   projectorAim: DEFAULT_AIM,
+  projectorSpot: "floor",
+  projectorSpotHeight: 0,
   surface: "floor",
 };
 
@@ -154,16 +163,37 @@ function readPlacement(raw: Partial<GoboSettings>) {
       projectorDistance: placed.distance,
       projectorHeight: placed.height,
       projectorAim: placed.aim,
+      projectorSpot: "floor" as const,
+      projectorSpotHeight: 0,
       projectorAngle: placed.angle,
     };
   }
   const projectorDistance = round(clamp(distance, DISTANCE_MIN, DISTANCE_MAX, defaultSettings.projectorDistance), 3);
   const projectorHeight = round(clamp(height, HEIGHT_MIN, HEIGHT_MAX, defaultSettings.projectorHeight), 3);
+  if (raw.projectorSpot === "wall") {
+    const projectorSpotHeight = round(
+      clamp(finite(raw.projectorSpotHeight) ?? 0, 0, projectorHeight, 0),
+      3,
+    );
+    return {
+      projectorDistance,
+      projectorHeight,
+      projectorAim: 0,
+      projectorSpot: "wall" as const,
+      projectorSpotHeight,
+      projectorAngle: angleFromSpot(projectorDistance, projectorHeight, {
+        surface: "wall",
+        height: projectorSpotHeight,
+      }),
+    };
+  }
   const projectorAim = round(clamp(aim, AIM_MIN, AIM_MAX, defaultSettings.projectorAim), 3);
   return {
     projectorDistance,
     projectorHeight,
     projectorAim,
+    projectorSpot: "floor" as const,
+    projectorSpotHeight: 0,
     projectorAngle: angleFromPlacement(projectorDistance, projectorHeight, projectorAim),
   };
 }
