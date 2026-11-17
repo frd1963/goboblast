@@ -27,7 +27,14 @@ import {
 import { parseHex, rgbToHex } from "@/lib/gobo-key";
 import { clearGoboImage, loadGoboImage, saveGoboImage } from "@/lib/gobo-store";
 import { angleFromSpot, clampSpot, spotForAngle, type BeamSpot } from "@/lib/placement";
-import { PROJECTOR_MAX, PROJECTOR_MIN, keystoneFor } from "@/lib/projector";
+import {
+  PROJECTOR_MAX,
+  PROJECTOR_MIN,
+  PROJECTOR_THROWS,
+  THROW_RATIO,
+  keystoneFor,
+  type ProjectorThrow,
+} from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
 import {
   HIDE_AFTER_MS,
@@ -94,6 +101,18 @@ function sliderNumber(value: number | readonly number[]) {
   return typeof value === "number" ? value : (value[0] ?? 0);
 }
 
+const THROW_LABELS: Record<ProjectorThrow, string> = {
+  short: "Short",
+  normal: "Normal",
+  long: "Long",
+};
+
+function formatThrowRatio(ratio: number) {
+  const hundredths = Math.round(ratio * 100) / 100;
+  const tenths = Math.round(ratio * 10) / 10;
+  return `${Math.abs(hundredths - tenths) < 1e-9 ? tenths : hundredths}:1`;
+}
+
 function formatDegrees(value: number) {
   return `${Math.round(value)}°`;
 }
@@ -149,7 +168,7 @@ export function GoboStage() {
     if (!canvas || frames.length === 0) return;
     const index = frameIndex(angleRef.current);
     const cssSize = cssSizeRef.current;
-    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.projectorAngle}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
+    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.projectorAngle}:${settingsRef.current.projectorThrow}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
     if (index === shownFrameRef.current && canvas.dataset.placement === stamp) return;
     const bitmap = frames[index];
     if (!bitmap) return;
@@ -187,9 +206,11 @@ export function GoboStage() {
       window.innerWidth,
       window.innerHeight,
       target,
+      settingsRef.current.projectorThrow,
     );
     canvas.dataset.homography = JSON.stringify(placed.matrix);
     canvas.dataset.projector = String(settingsRef.current.projectorAngle);
+    canvas.dataset.throw = settingsRef.current.projectorThrow;
     canvas.dataset.keystone = target;
     canvas.dataset.surface = "floor";
     if (placementRef.current === placed.css) return;
@@ -264,6 +285,7 @@ export function GoboStage() {
       patch.projectorAim !== undefined ||
       patch.projectorSpot !== undefined ||
       patch.projectorSpotHeight !== undefined ||
+      patch.projectorThrow !== undefined ||
       patch.surface !== undefined
     ) {
       shownFrameRef.current = -1;
@@ -752,6 +774,7 @@ export function GoboStage() {
                 "projectorAim",
                 "projectorSpot",
                 "projectorSpotHeight",
+                "projectorThrow",
               ])}
               onReset={() =>
                 update({
@@ -761,6 +784,7 @@ export function GoboStage() {
                   projectorAim: defaultSettings.projectorAim,
                   projectorSpot: defaultSettings.projectorSpot,
                   projectorSpotHeight: defaultSettings.projectorSpotHeight,
+                  projectorThrow: defaultSettings.projectorThrow,
                 })
               }
             >
@@ -769,21 +793,40 @@ export function GoboStage() {
                   Angle
                   <span>{formatDegrees(settings.projectorAngle)}</span>
                 </Label>
-                <ProjectorDial
-                  distance={settings.projectorDistance}
-                  height={settings.projectorHeight}
-                  spot={spotOf(settings)}
-                  angle={settings.projectorAngle}
-                  onPosition={(projectorDistance, projectorHeight) => {
-                    const current = settingsRef.current;
-                    update(withSpot(projectorDistance, projectorHeight, spotOf(current)));
-                  }}
-                  onSpot={(spot) => {
-                    const { projectorDistance, projectorHeight } = settingsRef.current;
-                    update(withSpot(projectorDistance, projectorHeight, spot));
-                  }}
-                  onAngle={(angle) => aimAt(angle)}
-                />
+                <div className="gobo-dial-row">
+                  <ProjectorDial
+                    distance={settings.projectorDistance}
+                    height={settings.projectorHeight}
+                    spot={spotOf(settings)}
+                    angle={settings.projectorAngle}
+                    throwKind={settings.projectorThrow}
+                    onPosition={(projectorDistance, projectorHeight) => {
+                      const current = settingsRef.current;
+                      update(withSpot(projectorDistance, projectorHeight, spotOf(current)));
+                    }}
+                    onSpot={(spot) => {
+                      const { projectorDistance, projectorHeight } = settingsRef.current;
+                      update(withSpot(projectorDistance, projectorHeight, spot));
+                    }}
+                    onAngle={(angle) => aimAt(angle)}
+                  />
+                  <div className="gobo-throw" role="radiogroup" aria-label="Projector throw">
+                    <span className="gobo-throw-title">Throw</span>
+                    {PROJECTOR_THROWS.map((kind) => (
+                      <label key={kind} className="gobo-throw-option">
+                        <input
+                          type="radio"
+                          name="gobo-throw"
+                          value={kind}
+                          checked={settings.projectorThrow === kind}
+                          onChange={() => update({ projectorThrow: kind })}
+                        />
+                        <span className="gobo-throw-name">{THROW_LABELS[kind]}</span>
+                        <span className="gobo-throw-ratio">{formatThrowRatio(THROW_RATIO[kind])}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <p className="gobo-speed">
                   Drag the projector to place it. Drag the spot or the slider to aim. A shallow beam hits the
                   wall. 90° is straight down on the floor.

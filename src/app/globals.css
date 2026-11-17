@@ -363,6 +363,100 @@ html:-webkit-full-screen body {
   outline-offset: 2px;
 }
 
+.gobo-dial-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.gobo-throw {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 4.6rem;
+}
+
+.gobo-throw-title {
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gobo-throw-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #cbd5e1;
+  line-height: 1.2;
+}
+
+.gobo-throw-option input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.gobo-throw-option:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.gobo-throw-option:has(input:checked) {
+  border-color: #6366f1;
+  background: #312e81;
+  color: #f8fafc;
+}
+
+.gobo-throw-option:has(input:focus-visible) {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+.gobo-throw-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.gobo-throw-ratio {
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gobo-throw-option:has(input:checked) .gobo-throw-ratio {
+  color: #c7d2fe;
+}
+
+@media (max-width: 519px) {
+  .gobo-dial-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+
+  .gobo-throw {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .gobo-throw-title {
+    grid-column: 1 / -1;
+  }
+
+  .gobo-throw-option {
+    align-items: center;
+  }
+}
+
 .gobo-stack-label {
   display: flex;
   flex-direction: column;
@@ -421,7 +515,8 @@ html:-webkit-full-screen body {
   cursor: pointer;
 }
 
-.gobo-panel input[type="checkbox"] {
+.gobo-panel input[type="checkbox"],
+.gobo-panel .gobo-throw-option input {
   pointer-events: none;
 }
 

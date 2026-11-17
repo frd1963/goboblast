@@ -21,6 +21,26 @@ const FIT_MARGIN_PX = 28;
  */
 const FLOOR_THROW = 0.55;
 
+export type ProjectorThrow = "short" | "normal" | "long";
+
+export const PROJECTOR_THROWS = ["short", "normal", "long"] as const;
+
+/**
+ * Throw ratio: distance to the surface over the width of the image it lights.
+ * Normal is the ratio implied by `FLOOR_THROW`, about 0.91:1, so it keeps the original keystone.
+ */
+export const THROW_RATIO: Record<ProjectorThrow, number> = {
+  short: 0.5,
+  normal: 1 / (2 * FLOOR_THROW),
+  long: 2.5,
+};
+
+/** Half the image width over the throw distance. A short throw spreads wider and keystones harder. */
+export function throwSpread(kind: ProjectorThrow) {
+  if (kind === "normal") return FLOOR_THROW;
+  return 1 / (2 * THROW_RATIO[kind]);
+}
+
 /** Row-major 3×3. Surface (x, y, 1) maps to screen (X, Y, W). Origin is the frame center. */
 export type HomographyMatrix = readonly [
   number,
@@ -48,12 +68,13 @@ const IDENTITY: HomographyMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
  * Far-edge width divided by near-edge width for a beam at `angleDeg`.
  * 90° (straight on) is 1. A grazing beam is the strongest taper.
  * The gobo keeps a fixed share of the throw, so the footprint is the perspective
- * projection of a floor rectangle: (1 - μ cos²θ) / (1 + μ cos²θ).
+ * projection of a floor rectangle: (1 - μ cos²θ) / (1 + μ cos²θ), where μ is the
+ * spread of the projector's throw.
  */
-export function floorKeystoneRatio(angleDeg: number) {
+export function floorKeystoneRatio(angleDeg: number, kind: ProjectorThrow = "normal") {
   const angle = clampAngle(angleDeg);
   const cos = Math.cos((angle * Math.PI) / 180);
-  const cover = FLOOR_THROW * cos * cos;
+  const cover = throwSpread(kind) * cos * cos;
   return (1 - cover) / (1 + cover);
 }
 
@@ -108,12 +129,13 @@ export function keystoneFor(
   viewportWidth: number,
   viewportHeight: number,
   target: KeystoneTarget = "floor",
+  kind: ProjectorThrow = "normal",
 ): Keystone {
   const center = "translate(-50%, -50%)";
   if (!(cssSize > 0)) return { matrix: IDENTITY, css: center };
   const diagram = clampAngle(angleDeg);
   const straightOn = target === "wall" ? clampAngle(90 - diagram) : diagram;
-  const ratio = floorKeystoneRatio(straightOn);
+  const ratio = floorKeystoneRatio(straightOn, kind);
   if (ratio > 0.999) return { matrix: IDENTITY, css: center };
   const k = (1 - ratio) / (1 + ratio);
   const magnitude = Math.min(32, (1 - ratio) * 58);

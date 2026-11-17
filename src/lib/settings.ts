@@ -15,6 +15,7 @@ import {
   placementForAngle,
   type BeamSpot,
 } from "@/lib/placement";
+import { PROJECTOR_THROWS, type ProjectorThrow } from "@/lib/projector";
 
 export const STORAGE_KEY = "goboblast-settings";
 
@@ -67,6 +68,8 @@ export type GoboSettings = {
   projectorSpot: BeamSpot["surface"];
   /** Height of a wall spot. 0 is the corner, 1 is the ceiling. */
   projectorSpotHeight: number;
+  /** Lens throw. Sets the beam spread and so how hard an oblique beam keystones. */
+  projectorThrow: ProjectorThrow;
   /** Always floor. Older saves that stored wall are migrated on load. */
   surface: ProjectionSurface;
   /** Text draws the words. Image projects an uploaded picture. */
@@ -112,6 +115,7 @@ export const defaultSettings: GoboSettings = {
   projectorAim: DEFAULT_AIM,
   projectorSpot: "floor",
   projectorSpotHeight: 0,
+  projectorThrow: "normal",
   surface: "floor",
   source: "text",
   imageName: "",
@@ -182,6 +186,7 @@ export function sanitizeSettings(input: unknown): GoboSettings {
     ),
     spin: round(clamp(raw.spin, SPIN_MIN, SPIN_MAX, defaultSettings.spin), 1),
     ...readPlacement(raw),
+    projectorThrow: PROJECTOR_THROWS.find((kind) => kind === raw.projectorThrow) ?? "normal",
     surface: "floor",
     source: raw.source === "image" ? "image" : "text",
     imageName: typeof raw.imageName === "string" ? raw.imageName.slice(0, 180) : "",

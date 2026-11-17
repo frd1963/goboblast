@@ -9,6 +9,10 @@ import {
   clampHeight,
   type BeamSpot,
 } from "@/lib/placement";
+import { throwSpread, type ProjectorThrow } from "@/lib/projector";
+
+/** Half-width of the beam where it lands, in diagram units, for a normal throw. */
+const CONE_HALF = 11;
 
 type Point = { x: number; y: number };
 type DragMode = "projector" | "aim";
@@ -71,6 +75,7 @@ export function ProjectorDial({
   height,
   spot,
   angle,
+  throwKind,
   onPosition,
   onSpot,
   onAngle,
@@ -79,6 +84,7 @@ export function ProjectorDial({
   height: number;
   spot: BeamSpot;
   angle: number;
+  throwKind: ProjectorThrow;
   onPosition: (distance: number, height: number) => void;
   onSpot: (spot: BeamSpot) => void;
   onAngle: (angle: number) => void;
@@ -92,6 +98,7 @@ export function ProjectorDial({
   const horizontal = spotAt.x < lens.x ? 180 : 0;
   const span = Math.abs(rotation - horizontal);
   const arc = span > 2 && span < 88 ? arcPath(lens, horizontal, rotation, 24) : "";
+  const coneHalf = (CONE_HALF * throwSpread(throwKind)) / throwSpread("normal");
 
   function viewPoint(event: PointerEvent<HTMLDivElement>): Point | null {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -265,7 +272,7 @@ export function ProjectorDial({
           strokeDasharray="3 4"
         />
 
-        <polygon points={conePoints(lens, spotAt, 11)} fill="rgba(248, 250, 252, 0.16)" />
+        <polygon points={conePoints(lens, spotAt, coneHalf)} data-throw={throwKind} fill="rgba(248, 250, 252, 0.16)" />
         <line
           x1={lens.x}
           y1={lens.y}
