@@ -69,6 +69,11 @@ export type GoboSettings = {
   projectorSpotHeight: number;
   /** Lens throw. Sets the beam spread and so how hard an oblique beam keystones. */
   projectorThrow: ProjectorThrow;
+  /**
+   * When on, a beam that lands on the wall uses the wall keystone.
+   * When off, that beam keeps the floor skew if it aims down and the ceiling skew if it aims up.
+   */
+  adjustForWall: boolean;
   /** Always floor. Older saves that stored wall are migrated on load. */
   surface: ProjectionSurface;
   /** Text draws the words. Image projects an uploaded picture. */
@@ -115,6 +120,7 @@ export const defaultSettings: GoboSettings = {
   projectorSpot: "floor",
   projectorSpotHeight: 0,
   projectorThrow: "normal",
+  adjustForWall: false,
   surface: "floor",
   source: "text",
   imageName: "",
@@ -186,6 +192,7 @@ export function sanitizeSettings(input: unknown): GoboSettings {
     spin: round(clamp(raw.spin, SPIN_MIN, SPIN_MAX, defaultSettings.spin), 1),
     ...readPlacement(raw),
     projectorThrow: PROJECTOR_THROWS.find((kind) => kind === raw.projectorThrow) ?? "normal",
+    adjustForWall: raw.adjustForWall === true,
     surface: "floor",
     source: raw.source === "image" ? "image" : "text",
     imageName: typeof raw.imageName === "string" ? raw.imageName.slice(0, 180) : "",

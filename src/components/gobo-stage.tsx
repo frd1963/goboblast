@@ -169,7 +169,7 @@ export function GoboStage() {
     if (!canvas || frames.length === 0) return;
     const index = frameIndex(angleRef.current);
     const cssSize = cssSizeRef.current;
-    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.projectorAngle}:${settingsRef.current.projectorThrow}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
+    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.adjustForWall ? 1 : 0}:${settingsRef.current.projectorAngle}:${settingsRef.current.projectorThrow}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
     if (index === shownFrameRef.current && canvas.dataset.placement === stamp) return;
     const bitmap = frames[index];
     if (!bitmap) return;
@@ -200,12 +200,17 @@ export function GoboStage() {
     if (!canvas) return;
     const cssSize = cssSizeRef.current;
     if (!(cssSize > 0)) return;
+    const spot = settingsRef.current.projectorSpot;
     const target =
-      settingsRef.current.projectorSpot === "wall"
-        ? "wall"
-        : settingsRef.current.projectorSpot === "ceiling"
+      spot === "wall" && !settingsRef.current.adjustForWall
+        ? settingsRef.current.projectorAngle < 0
           ? "ceiling"
-          : "floor";
+          : "floor"
+        : spot === "wall"
+          ? "wall"
+          : spot === "ceiling"
+            ? "ceiling"
+            : "floor";
     const placed = keystoneFor(
       settingsRef.current.projectorAngle,
       cssSize,
@@ -292,6 +297,7 @@ export function GoboStage() {
       patch.projectorSpot !== undefined ||
       patch.projectorSpotHeight !== undefined ||
       patch.projectorThrow !== undefined ||
+      patch.adjustForWall !== undefined ||
       patch.surface !== undefined
     ) {
       shownFrameRef.current = -1;
@@ -523,7 +529,7 @@ export function GoboStage() {
     paintFrame();
     // Redraws through refs when the throw changes. The spin loop is separate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.projectorAngle, settings.projectorSpot, settings.surface, viewport.w, viewport.h]);
+  }, [settings.projectorAngle, settings.projectorSpot, settings.adjustForWall, settings.surface, viewport.w, viewport.h]);
 
   const frameKey = [
     settings.text,
@@ -824,6 +830,7 @@ export function GoboStage() {
                 "projectorSpot",
                 "projectorSpotHeight",
                 "projectorThrow",
+                "adjustForWall",
               ])}
               onReset={() =>
                 update({
@@ -834,6 +841,7 @@ export function GoboStage() {
                   projectorSpot: defaultSettings.projectorSpot,
                   projectorSpotHeight: defaultSettings.projectorSpotHeight,
                   projectorThrow: defaultSettings.projectorThrow,
+                  adjustForWall: defaultSettings.adjustForWall,
                 })
               }
             >
@@ -889,6 +897,15 @@ export function GoboStage() {
                   aria-label="Projector angle"
                   onValueChange={(next) => aimAt(sliderNumber(next))}
                 />
+                <Label className="gobo-check gobo-wall-adjust" htmlFor="gobo-adjust-wall">
+                  <Switch
+                    id="gobo-adjust-wall"
+                    checked={settings.adjustForWall}
+                    onCheckedChange={(adjustForWall) => update({ adjustForWall })}
+                  />
+                  <span className="gobo-check-name">Adjust for wall</span>
+                  <span className="gobo-check-value">{settings.adjustForWall ? "On" : "Off"}</span>
+                </Label>
               </div>
             </PanelSection>
 

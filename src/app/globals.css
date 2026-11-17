@@ -554,7 +554,6 @@ html:-webkit-full-screen body {
   cursor: pointer;
 }
 
-.gobo-panel input[type="checkbox"],
 .gobo-panel .gobo-throw-option input {
   pointer-events: none;
 }
@@ -624,6 +623,11 @@ html:-webkit-full-screen body {
   font-size: 0.85rem;
   font-weight: 400;
   cursor: pointer;
+}
+
+.gobo-wall-adjust {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
 }
 
 .gobo-dimmed {
