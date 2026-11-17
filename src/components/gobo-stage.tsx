@@ -763,7 +763,7 @@ export function GoboStage() {
       onPointerDown={(event) => {
         const target = event.target;
         if (target instanceof Node && panelRef.current?.contains(target)) return;
-        setPanel(true);
+        setPanel(!openRef.current);
       }}
     >
       {visible ? (
