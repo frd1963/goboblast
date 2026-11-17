@@ -36,6 +36,17 @@ docker compose up --build
 
 Open [http://localhost:4317](http://localhost:4317). `docker compose down` stops it.
 
+### Serve under a path
+
+`BASE_PATH` is a build argument. The image reads it while `next build` runs and passes it to Next.js as `basePath` and `assetPrefix`, so the page and its assets are both served under that prefix. Leave it unset to keep the app at `/`. `gobos` and `/gobos` both become `/gobos`. A trailing slash is rejected.
+
+```bash
+BASE_PATH=/gobos docker compose build
+docker compose up -d
+```
+
+`docker compose build --build-arg BASE_PATH=/gobos` does the same thing. Open [http://localhost:4317/gobos](http://localhost:4317/gobos). The prefix is fixed in the image; change it by building again. Setting `BASE_PATH` only on `docker run` does not move the app.
+
 ## How to use it
 
 - Click the black stage, or press a key that is not already assigned, to open the control panel.

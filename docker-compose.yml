@@ -1,6 +1,11 @@
 services:
   goboblast:
-    build: .
+    build:
+      context: .
+      args:
+        # Optional. Unset serves the app at /. `gobos` and `/gobos` both become `/gobos`.
+        # A trailing slash is rejected. Example: BASE_PATH=/gobos docker compose build
+        BASE_PATH: ${BASE_PATH:-}
     image: goboblast
     ports:
       - "4317:4317"
