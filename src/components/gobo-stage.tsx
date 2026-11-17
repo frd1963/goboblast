@@ -153,6 +153,7 @@ export function GoboStage() {
   const placementRef = useRef("");
   const [imageMaster, setImageMaster] = useState<HTMLCanvasElement | null>(null);
   const [imageError, setImageError] = useState("");
+  const [resetArmed, setResetArmed] = useState(false);
   const imageToken = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -320,6 +321,19 @@ export function GoboStage() {
     imageToken.current += 1;
     setImageMaster(null);
     update({ imageName: "", ...patch });
+    try {
+      await clearGoboImage();
+    } catch {
+      setImageError("The picture could not be cleared.");
+    }
+  }
+
+  async function resetAll() {
+    setResetArmed(false);
+    setImageError("");
+    imageToken.current += 1;
+    setImageMaster(null);
+    update({ ...defaultSettings });
     try {
       await clearGoboImage();
     } catch {
@@ -588,12 +602,23 @@ export function GoboStage() {
   }, [frameKey, settings.source]);
 
   useEffect(() => {
+    if (!resetArmed) return;
+    const timer = window.setTimeout(() => setResetArmed(false), 2500);
+    return () => window.clearTimeout(timer);
+  }, [resetArmed]);
+
+  useEffect(() => {
+    if (!open) setResetArmed(false);
+  }, [open]);
+
+  useEffect(() => {
     let cancelled = false;
+    const generation = imageToken.current;
     void loadGoboImage()
       .then(async (record) => {
-        if (cancelled || !record) return;
+        if (cancelled || generation !== imageToken.current || !record) return;
         const canvas = await rasterizeGoboFile(new File([record.blob], record.name, { type: record.type }));
-        if (cancelled) return;
+        if (cancelled || generation !== imageToken.current) return;
         imageToken.current += 1;
         setImageMaster(canvas);
         if (settingsRef.current.imageName !== record.name) update({ imageName: record.name });
@@ -750,17 +775,36 @@ export function GoboStage() {
           data-testid="panel"
         >
           <div className="gobo-panel-head">
-            <h2>Gobo</h2>
-            <Button
+            <button
               type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="gobo-close"
-              aria-label="Close panel"
-              onClick={() => setPanel(false)}
+              className="gobo-reset-all"
+              data-testid="reset-all"
+              data-armed={resetArmed ? "true" : "false"}
+              disabled={!resetArmed && !canResetAll(settings, imageMaster !== null)}
+              aria-label={resetArmed ? "Confirm reset of all settings" : "Reset all settings"}
+              onClick={() => {
+                if (!resetArmed) {
+                  setResetArmed(true);
+                  return;
+                }
+                void resetAll();
+              }}
             >
-              ×
-            </Button>
+              {resetArmed ? "Confirm reset" : "Reset all"}
+            </button>
+            <div className="gobo-panel-titlebar">
+              <h2>Gobo</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="gobo-close"
+                aria-label="Close panel"
+                onClick={() => setPanel(false)}
+              >
+                ×
+              </Button>
+            </div>
           </div>
           <div className="gobo-panel-body">
             <PanelSection
@@ -1357,6 +1401,13 @@ function withSpot(distance: number, height: number, spot: BeamSpot) {
 
 function sectionChanged(settings: GoboSettings, keys: readonly (keyof GoboSettings)[]) {
   return keys.some((key) => settings[key] !== defaultSettings[key]);
+}
+
+function canResetAll(settings: GoboSettings, hasImage: boolean) {
+  if (hasImage) return true;
+  return (Object.keys(defaultSettings) as (keyof GoboSettings)[]).some(
+    (key) => settings[key] !== defaultSettings[key],
+  );
 }
 
 function keySummary(settings: GoboSettings) {
