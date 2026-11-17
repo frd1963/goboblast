@@ -9,10 +9,7 @@ import {
   clampHeight,
   type BeamSpot,
 } from "@/lib/placement";
-import { PROJECTOR_MAX, PROJECTOR_MIN, throwSpread, type ProjectorThrow } from "@/lib/projector";
-
-/** Half-width of the beam where it lands, in diagram units, for a normal throw. */
-const CONE_HALF = 11;
+import { PROJECTOR_MAX, PROJECTOR_MIN, THROW_RATIO, type ProjectorThrow } from "@/lib/projector";
 
 type Point = { x: number; y: number };
 type DragMode = "projector" | "aim";
@@ -79,13 +76,43 @@ function arcPath(origin: Point, fromDeg: number, toDeg: number, radius: number) 
   return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${radius} ${radius} 0 ${large} ${sweep} ${x2.toFixed(2)} ${y2.toFixed(2)}`;
 }
 
-function conePoints(from: Point, to: Point, half: number) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const length = Math.hypot(dx, dy) || 1;
-  const px = (-dy / length) * half;
-  const py = (dx / length) * half;
-  return `${from.x},${from.y} ${to.x + px},${to.y + py} ${to.x - px},${to.y - py}`;
+/**
+ * Position along the room outline, in diagram pixels.
+ * 0 is the floor at the wall. Positive runs out across the floor.
+ * Negative runs up the wall, then out across the ceiling.
+ */
+function spotAlong(spot: BeamSpot) {
+  if (spot.surface === "wall") return -spot.height * ROOM.height;
+  if (spot.surface === "ceiling") return -ROOM.height - spot.aim * ROOM.width;
+  return spot.aim * ROOM.width;
+}
+
+function pointAlong(along: number): Point {
+  if (along >= 0) return { x: ROOM.wallFace + along, y: ROOM.floorFace };
+  if (along >= -ROOM.height) return { x: ROOM.wallFace, y: ROOM.floorFace + along };
+  return { x: ROOM.wallFace + Math.min(ROOM.width, -ROOM.height - along), y: ROOM.roomTop };
+}
+
+/**
+ * The lit patch is `throw distance / throw ratio` long, centered on the spot.
+ * Throw distance is the beam from the lens to the spot. A patch that runs past a
+ * corner continues on the next surface, and stops at the far side of the room.
+ */
+function beamPoints(lens: Point, spot: BeamSpot, kind: ProjectorThrow) {
+  const center = spotPoint(spot);
+  const along = spotAlong(spot);
+  const distance = Math.hypot(center.x - lens.x, center.y - lens.y);
+  const half = distance / (2 * THROW_RATIO[kind]);
+  const start = Math.max(-(ROOM.height + ROOM.width), along - half);
+  const end = Math.min(ROOM.width, along + half);
+  const marks = [start, ...[0, -ROOM.height].filter((mark) => mark > start && mark < end), end];
+  const outline: number[] = [];
+  for (const mark of marks) {
+    if (outline.length === 0 || mark - outline[outline.length - 1] > 0.05) outline.push(mark);
+  }
+  return [lens, ...outline.map(pointAlong)]
+    .map((point) => `${Math.round(point.x * 10) / 10},${Math.round(point.y * 10) / 10}`)
+    .join(" ");
 }
 
 export function ProjectorDial({
@@ -116,7 +143,7 @@ export function ProjectorDial({
   const horizontal = spotAt.x < lens.x ? 180 : 0;
   const delta = shortestTurn(horizontal, rotation);
   const arc = Math.abs(delta) > 2 && Math.abs(delta) < 88 ? arcPath(lens, horizontal, horizontal + delta, 24) : "";
-  const coneHalf = (CONE_HALF * throwSpread(throwKind)) / throwSpread("normal");
+  const beam = beamPoints(lens, spot, throwKind);
 
   function viewPoint(event: PointerEvent<HTMLDivElement>): Point | null {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -300,7 +327,7 @@ export function ProjectorDial({
           strokeDasharray="3 4"
         />
 
-        <polygon points={conePoints(lens, spotAt, coneHalf)} data-throw={throwKind} fill="rgba(248, 250, 252, 0.16)" />
+        <polygon points={beam} data-throw={throwKind} fill="rgba(248, 250, 252, 0.16)" />
         <line
           x1={lens.x}
           y1={lens.y}
