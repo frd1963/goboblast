@@ -13,6 +13,29 @@ npm run dev
 
 Open [http://localhost:4317](http://localhost:4317).
 
+## Run with Docker
+
+The image is a multi-stage build. It installs from the lockfile, runs `next build` with standalone output, and starts that server as a non-root user. `PORT` defaults to 4317 and the server listens on `0.0.0.0`.
+
+```bash
+docker build -t goboblast .
+docker run --rm -p 4317:4317 goboblast
+```
+
+To publish a different port, set `PORT` and map the same number:
+
+```bash
+docker run --rm -e PORT=8080 -p 8080:8080 goboblast
+```
+
+Compose builds the same image, maps port 4317, and restarts the container unless you stop it:
+
+```bash
+docker compose up --build
+```
+
+Open [http://localhost:4317](http://localhost:4317). `docker compose down` stops it.
+
 ## How to use it
 
 - Click the black stage, or press a key that is not already assigned, to open the control panel.

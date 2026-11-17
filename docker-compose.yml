@@ -1,0 +1,11 @@
+services:
+  goboblast:
+    build: .
+    image: goboblast
+    ports:
+      - "4317:4317"
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "4317"
+    restart: unless-stopped
