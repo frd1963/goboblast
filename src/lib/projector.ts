@@ -63,6 +63,27 @@ export type Keystone = {
 /** Which surface the beam is hitting. The throw is measured against that surface. */
 export type KeystoneTarget = "floor" | "wall" | "ceiling";
 
+/**
+ * The keystone geometry for this aim. With Adjust for wall off, a wall hit keeps
+ * the floor skew when the beam aims down and the ceiling skew when it aims up.
+ */
+export function keystoneSurface(
+  spot: "floor" | "wall" | "ceiling",
+  angleDeg: number,
+  adjustForWall: boolean,
+): KeystoneTarget {
+  if (spot === "wall" && !adjustForWall) return angleDeg < 0 ? "ceiling" : "floor";
+  if (spot === "wall") return "wall";
+  if (spot === "ceiling") return "ceiling";
+  return "floor";
+}
+
+/** The angle `floorKeystoneRatio` expects: 90° is perpendicular to the surface. */
+export function surfaceStraightOn(target: KeystoneTarget, angleDeg: number) {
+  const angle = Number.isFinite(angleDeg) ? angleDeg : 0;
+  return target === "wall" ? 90 - Math.abs(angle) : Math.abs(angle);
+}
+
 const IDENTITY: HomographyMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 /**
@@ -136,7 +157,7 @@ export function keystoneFor(
   const center = "translate(-50%, -50%)";
   if (!(cssSize > 0)) return { matrix: IDENTITY, css: center };
   const diagram = clampAngle(angleDeg);
-  const straightOn = target === "wall" ? clampAngle(90 - Math.abs(diagram)) : Math.abs(diagram);
+  const straightOn = clampAngle(surfaceStraightOn(target, diagram));
   const ratio = floorKeystoneRatio(straightOn, kind);
   if (ratio > 0.999) return { matrix: IDENTITY, css: center };
   const k = (1 - ratio) / (1 + ratio);

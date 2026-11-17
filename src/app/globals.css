@@ -630,6 +630,10 @@ html:-webkit-full-screen body {
   margin-bottom: 0;
 }
 
+.gobo-even {
+  margin-top: 0.75rem;
+}
+
 .gobo-dimmed {
   opacity: 0.4;
 }

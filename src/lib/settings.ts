@@ -74,6 +74,10 @@ export type GoboSettings = {
    * When off, that beam keeps the floor skew if it aims down and the ceiling skew if it aims up.
    */
   adjustForWall: boolean;
+  /** When on, the far edge of an oblique beam is brightened so the surface looks more even. */
+  evenBrightness: boolean;
+  /** 0–100. 0 leaves the gobo unchanged. 100 lifts the far edge by the full keystone taper. */
+  evenBrightnessAmount: number;
   /** Always floor. Older saves that stored wall are migrated on load. */
   surface: ProjectionSurface;
   /** Text draws the words. Image projects an uploaded picture. */
@@ -121,6 +125,8 @@ export const defaultSettings: GoboSettings = {
   projectorSpotHeight: 0,
   projectorThrow: "normal",
   adjustForWall: false,
+  evenBrightness: false,
+  evenBrightnessAmount: 100,
   surface: "floor",
   source: "text",
   imageName: "",
@@ -193,6 +199,11 @@ export function sanitizeSettings(input: unknown): GoboSettings {
     ...readPlacement(raw),
     projectorThrow: PROJECTOR_THROWS.find((kind) => kind === raw.projectorThrow) ?? "normal",
     adjustForWall: raw.adjustForWall === true,
+    evenBrightness: raw.evenBrightness === true,
+    evenBrightnessAmount: round(
+      clamp(raw.evenBrightnessAmount, 0, 100, defaultSettings.evenBrightnessAmount),
+      0,
+    ),
     surface: "floor",
     source: raw.source === "image" ? "image" : "text",
     imageName: typeof raw.imageName === "string" ? raw.imageName.slice(0, 180) : "",

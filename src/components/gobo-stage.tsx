@@ -24,6 +24,7 @@ import {
   renderGoboFrames,
   renderImageGoboFrames,
 } from "@/lib/gobo-frames";
+import { applyEvenBrightness, evenBrightnessLift, farEdgeIsTop } from "@/lib/even-brightness";
 import { parseHex, rgbToHex } from "@/lib/gobo-key";
 import { clearGoboImage, loadGoboImage, saveGoboImage } from "@/lib/gobo-store";
 import { angleFromSpot, clampSpot, spotForAngle, type BeamSpot } from "@/lib/placement";
@@ -33,6 +34,7 @@ import {
   PROJECTOR_THROWS,
   THROW_RATIO,
   keystoneFor,
+  keystoneSurface,
   type ProjectorThrow,
 } from "@/lib/projector";
 import { FONT_GROUPS, FONT_OPTIONS, getFont } from "@/lib/fonts";
@@ -169,7 +171,7 @@ export function GoboStage() {
     if (!canvas || frames.length === 0) return;
     const index = frameIndex(angleRef.current);
     const cssSize = cssSizeRef.current;
-    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.adjustForWall ? 1 : 0}:${settingsRef.current.projectorAngle}:${settingsRef.current.projectorThrow}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
+    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.adjustForWall ? 1 : 0}:${settingsRef.current.evenBrightness ? settingsRef.current.evenBrightnessAmount : 0}:${settingsRef.current.projectorAngle}:${settingsRef.current.projectorThrow}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
     if (index === shownFrameRef.current && canvas.dataset.placement === stamp) return;
     const bitmap = frames[index];
     if (!bitmap) return;
@@ -189,10 +191,20 @@ export function GoboStage() {
     const size = `${cssSize}px`;
     if (canvas.style.width !== size) canvas.style.width = size;
     if (canvas.style.height !== size) canvas.style.height = size;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(bitmap, 0, 0);
+    const current = settingsRef.current;
+    if (current.evenBrightness && current.evenBrightnessAmount > 0) {
+      const target = keystoneSurface(current.projectorSpot, current.projectorAngle, current.adjustForWall);
+      const lift = evenBrightnessLift(target, current.projectorAngle, current.projectorThrow, current.evenBrightnessAmount);
+      if (lift > 0) {
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        applyEvenBrightness(image.data, canvas.width, canvas.height, farEdgeIsTop(target, current.projectorAngle), lift);
+        ctx.putImageData(image, 0, 0);
+      }
+    }
   }
 
   function applyPlacement() {
@@ -200,17 +212,11 @@ export function GoboStage() {
     if (!canvas) return;
     const cssSize = cssSizeRef.current;
     if (!(cssSize > 0)) return;
-    const spot = settingsRef.current.projectorSpot;
-    const target =
-      spot === "wall" && !settingsRef.current.adjustForWall
-        ? settingsRef.current.projectorAngle < 0
-          ? "ceiling"
-          : "floor"
-        : spot === "wall"
-          ? "wall"
-          : spot === "ceiling"
-            ? "ceiling"
-            : "floor";
+    const target = keystoneSurface(
+      settingsRef.current.projectorSpot,
+      settingsRef.current.projectorAngle,
+      settingsRef.current.adjustForWall,
+    );
     const placed = keystoneFor(
       settingsRef.current.projectorAngle,
       cssSize,
@@ -298,6 +304,8 @@ export function GoboStage() {
       patch.projectorSpotHeight !== undefined ||
       patch.projectorThrow !== undefined ||
       patch.adjustForWall !== undefined ||
+      patch.evenBrightness !== undefined ||
+      patch.evenBrightnessAmount !== undefined ||
       patch.surface !== undefined
     ) {
       shownFrameRef.current = -1;
@@ -529,7 +537,7 @@ export function GoboStage() {
     paintFrame();
     // Redraws through refs when the throw changes. The spin loop is separate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.projectorAngle, settings.projectorSpot, settings.adjustForWall, settings.surface, viewport.w, viewport.h]);
+  }, [settings.projectorAngle, settings.projectorSpot, settings.adjustForWall, settings.evenBrightness, settings.evenBrightnessAmount, settings.projectorThrow, settings.surface, viewport.w, viewport.h]);
 
   const frameKey = [
     settings.text,
@@ -831,6 +839,8 @@ export function GoboStage() {
                 "projectorSpotHeight",
                 "projectorThrow",
                 "adjustForWall",
+                "evenBrightness",
+                "evenBrightnessAmount",
               ])}
               onReset={() =>
                 update({
@@ -842,6 +852,8 @@ export function GoboStage() {
                   projectorSpotHeight: defaultSettings.projectorSpotHeight,
                   projectorThrow: defaultSettings.projectorThrow,
                   adjustForWall: defaultSettings.adjustForWall,
+                  evenBrightness: defaultSettings.evenBrightness,
+                  evenBrightnessAmount: defaultSettings.evenBrightnessAmount,
                 })
               }
             >
@@ -906,6 +918,27 @@ export function GoboStage() {
                   <span className="gobo-check-name">Adjust for wall</span>
                   <span className="gobo-check-value">{settings.adjustForWall ? "On" : "Off"}</span>
                 </Label>
+                <Label className="gobo-check gobo-even" htmlFor="gobo-even">
+                  <Switch
+                    id="gobo-even"
+                    checked={settings.evenBrightness}
+                    onCheckedChange={(evenBrightness) => update({ evenBrightness })}
+                  />
+                  <span className="gobo-check-name">Even brightness</span>
+                  <span className="gobo-check-value">{settings.evenBrightness ? "On" : "Off"}</span>
+                </Label>
+                {settings.evenBrightness ? (
+                  <SliderField
+                    id="gobo-even-amount"
+                    label="Strength"
+                    valueLabel={`${settings.evenBrightnessAmount}%`}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={settings.evenBrightnessAmount}
+                    onChange={(evenBrightnessAmount) => update({ evenBrightnessAmount })}
+                  />
+                ) : null}
               </div>
             </PanelSection>
 
