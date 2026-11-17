@@ -19,6 +19,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${goboFontClassName} gobo-hide-cursor h-full`}>
+      <head>
+        <link rel="icon" href="./favicon.ico" />
+      </head>
       <body className="h-full">{children}</body>
     </html>
   );

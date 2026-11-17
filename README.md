@@ -38,7 +38,7 @@ Open [http://localhost:4317](http://localhost:4317). `docker compose down` stops
 
 ### Serve under a path
 
-`BASE_PATH` is a build argument. The image reads it while `next build` runs and passes it to Next.js as `basePath` and `assetPrefix`, so the page and its assets are both served under that prefix. Leave it unset to keep the app at `/`. `gobos` and `/gobos` both become `/gobos`. A trailing slash is rejected.
+`BASE_PATH` is a build argument. The image reads it while `next build` runs and passes it to Next.js as `basePath`, so the app is served under that prefix. Leave it unset to keep the app at `/`. `gobos` and `/gobos` both become `/gobos`. A trailing slash on `BASE_PATH` is rejected. Built asset URLs are relative (`./_next/...`), and the page redirects to a trailing slash so those URLs stay on the page's path instead of the host root.
 
 ```bash
 BASE_PATH=/gobos docker compose build

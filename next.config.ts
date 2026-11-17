@@ -19,7 +19,12 @@ const basePath = normalizeBasePath(process.env.BASE_PATH);
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
+  // `./_next/...` instead of `/_next/...`, so scripts and styles resolve against
+  // the page URL. The trailing slash keeps that directory the page itself, which
+  // is what makes the same relative URL work at `/` and under basePath.
+  assetPrefix: ".",
+  trailingSlash: true,
+  ...(basePath ? { basePath } : {}),
   cacheComponents: true,
   partialPrefetching: true,
   devIndicators: false,
