@@ -354,6 +354,20 @@ export function GoboStage() {
         return;
       }
 
+      if (
+        (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        const step = (event.shiftKey ? 5 : 1) * (event.key === "ArrowUp" ? 1 : -1);
+        const current = Math.round(settingsRef.current.projectorAngle);
+        const next = Math.min(PROJECTOR_MAX, Math.max(PROJECTOR_MIN, current + step));
+        if (next !== current) aimAt(next);
+        return;
+      }
+
       if ((event.key === "f" || event.key === "F") && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         toggleFullscreen();
@@ -1258,8 +1272,8 @@ export function GoboStage() {
               Click the stage or press any unassigned key to open this panel. Esc closes it. F toggles
               fullscreen. Spin sets the speed directly: the middle is stopped, left is counterclockwise, and
               right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add {SPIN_STEP}°/s and can
-              reverse it. At zero speed the gobo holds its angle. While a control is focused, those keys stay
-              with it. The panel hides after 4 seconds of quiet, and every change is kept in this browser.
+              reverse it. At zero speed the gobo holds its angle. Up and down arrows tilt the projector 1°,
+              or 5° with Shift. While a control is focused, those keys stay with it. The panel hides after 4 seconds of quiet, and every change is kept in this browser.
               Choose Image to project a picture. Clear the text, or the picture, for a pure black frame.
             </p>
             </div>
