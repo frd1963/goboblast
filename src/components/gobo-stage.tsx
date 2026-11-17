@@ -200,7 +200,12 @@ export function GoboStage() {
     if (!canvas) return;
     const cssSize = cssSizeRef.current;
     if (!(cssSize > 0)) return;
-    const target = settingsRef.current.projectorSpot === "wall" ? "wall" : "floor";
+    const target =
+      settingsRef.current.projectorSpot === "wall"
+        ? "wall"
+        : settingsRef.current.projectorSpot === "ceiling"
+          ? "ceiling"
+          : "floor";
     const placed = keystoneFor(
       settingsRef.current.projectorAngle,
       cssSize,
@@ -872,8 +877,8 @@ export function GoboStage() {
                   </div>
                 </div>
                 <p className="gobo-speed">
-                  Drag the projector to place it. Drag the spot or the slider to aim. A shallow beam hits the
-                  wall. 90° is straight down on the floor.
+                  Drag the projector to place it. Drag the spot or the slider to aim. 90° is straight down on
+                  the floor, 0° is horizontal into the wall, and a steep negative angle hits the ceiling.
                 </p>
                 <Slider
                   id="gobo-projector"
@@ -1359,8 +1364,8 @@ export function GoboStage() {
               Click the stage or press any unassigned key to open this panel. Esc closes it. F toggles
               fullscreen. Spin sets the speed directly: the middle is stopped, left is counterclockwise, and
               right is clockwise, up to {SPIN_MAX}°/s. Left and right arrows add {SPIN_STEP}°/s and can
-              reverse it. At zero speed the gobo holds its angle. Up and down arrows tilt the projector 1°,
-              or 5° with Shift. While a control is focused, those keys stay with it. The panel hides after 4 seconds of quiet, and every change is kept in this browser.
+              reverse it.               At zero speed the gobo holds its angle. Up and down arrows tilt the projector 1°,
+              or 5° with Shift, from −90° to 90°. While a control is focused, those keys stay with it. The panel hides after 4 seconds of quiet, and every change is kept in this browser.
               Choose Image to project a picture. Clear the text, or the picture, for a pure black frame.
             </p>
             </div>
@@ -1373,6 +1378,7 @@ export function GoboStage() {
 
 function spotOf(settings: GoboSettings): BeamSpot {
   if (settings.projectorSpot === "wall") return { surface: "wall", height: settings.projectorSpotHeight };
+  if (settings.projectorSpot === "ceiling") return { surface: "ceiling", aim: settings.projectorAim };
   return { surface: "floor", aim: settings.projectorAim };
 }
 
@@ -1386,6 +1392,16 @@ function withSpot(distance: number, height: number, spot: BeamSpot) {
       projectorAim: 0,
       projectorSpot: "wall" as const,
       projectorSpotHeight: placed.height,
+      projectorAngle,
+    };
+  }
+  if (placed.surface === "ceiling") {
+    return {
+      projectorDistance: distance,
+      projectorHeight: height,
+      projectorAim: placed.aim,
+      projectorSpot: "ceiling" as const,
+      projectorSpotHeight: 0,
       projectorAngle,
     };
   }

@@ -9,7 +9,7 @@ import {
   clampHeight,
   type BeamSpot,
 } from "@/lib/placement";
-import { throwSpread, type ProjectorThrow } from "@/lib/projector";
+import { PROJECTOR_MAX, PROJECTOR_MIN, throwSpread, type ProjectorThrow } from "@/lib/projector";
 
 /** Half-width of the beam where it lands, in diagram units, for a normal throw. */
 const CONE_HALF = 11;
@@ -28,20 +28,38 @@ function spotPoint(spot: BeamSpot): Point {
   if (spot.surface === "wall") {
     return { x: ROOM.wallFace, y: ROOM.floorFace - spot.height * ROOM.height };
   }
+  if (spot.surface === "ceiling") {
+    return { x: ROOM.wallFace + spot.aim * ROOM.width, y: ROOM.roomTop };
+  }
   return { x: ROOM.wallFace + spot.aim * ROOM.width, y: ROOM.floorFace };
 }
 
-function spotFromPointer(point: Point, projectorHeight: number): BeamSpot {
+function spotFromPointer(point: Point): BeamSpot {
+  const nearWall = point.x <= ROOM.wallFace + 20;
+  const onCeiling = point.y <= ROOM.roomTop + 14 && point.x >= ROOM.wallFace - 8;
+  if (onCeiling && (!nearWall || point.y <= ROOM.roomTop + 6)) {
+    const aim = nearWall ? 0 : clampAim((point.x - ROOM.wallFace) / ROOM.width);
+    return { surface: "ceiling", aim };
+  }
   const aboveFloor = point.y < ROOM.floorFace - 6;
-  const towardWall = point.x <= ROOM.wallFace + 20;
-  if (aboveFloor && towardWall) {
-    const ceiling = ROOM.floorFace - projectorHeight * ROOM.height;
-    const y = Math.min(ROOM.floorFace, Math.max(ceiling, point.y));
+  if (aboveFloor && nearWall) {
+    const y = Math.min(ROOM.floorFace, Math.max(ROOM.roomTop, point.y));
     const spotHeight = Math.round(((ROOM.floorFace - y) / ROOM.height) * 1000) / 1000;
     if (spotHeight <= 0.01) return { surface: "floor", aim: 0 };
-    return { surface: "wall", height: spotHeight };
+    if (spotHeight >= 0.99) return { surface: "ceiling", aim: 0 };
+    return { surface: "wall", height: Math.min(1, spotHeight) };
+  }
+  if (point.y <= ROOM.roomTop + 10) {
+    return { surface: "ceiling", aim: clampAim((point.x - ROOM.wallFace) / ROOM.width) };
   }
   return { surface: "floor", aim: clampAim((point.x - ROOM.wallFace) / ROOM.width) };
+}
+
+function shortestTurn(from: number, to: number) {
+  let delta = to - from;
+  while (delta > 180) delta -= 360;
+  while (delta < -180) delta += 360;
+  return delta;
 }
 
 function beamDegrees(from: Point, to: Point) {
@@ -96,8 +114,8 @@ export function ProjectorDial({
   const rotation = beamDegrees(lens, spotAt);
   const shown = Math.round(angle);
   const horizontal = spotAt.x < lens.x ? 180 : 0;
-  const span = Math.abs(rotation - horizontal);
-  const arc = span > 2 && span < 88 ? arcPath(lens, horizontal, rotation, 24) : "";
+  const delta = shortestTurn(horizontal, rotation);
+  const arc = Math.abs(delta) > 2 && Math.abs(delta) < 88 ? arcPath(lens, horizontal, horizontal + delta, 24) : "";
   const coneHalf = (CONE_HALF * throwSpread(throwKind)) / throwSpread("normal");
 
   function viewPoint(event: PointerEvent<HTMLDivElement>): Point | null {
@@ -118,6 +136,12 @@ export function ProjectorDial({
       point.x >= ROOM.wallFace - 8 &&
       point.x <= ROOM.roomRight;
     if (onFloor) return "aim";
+    const onCeiling =
+      point.y <= ROOM.roomTop + 14 &&
+      point.y >= ROOM.roomTop - 16 &&
+      point.x >= ROOM.wallFace - 8 &&
+      point.x <= ROOM.roomRight;
+    if (onCeiling) return "aim";
     const onWall =
       point.x <= ROOM.wallFace + 20 &&
       point.x >= 8 &&
@@ -145,9 +169,10 @@ export function ProjectorDial({
       onPosition(nextDistance, nextHeight);
       return;
     }
-    const next = spotFromPointer(point, height);
+    const next = spotFromPointer(point);
     if (next.surface === spot.surface) {
       if (next.surface === "floor" && spot.surface === "floor" && next.aim === spot.aim) return;
+      if (next.surface === "ceiling" && spot.surface === "ceiling" && next.aim === spot.aim) return;
       if (next.surface === "wall" && spot.surface === "wall" && next.height === spot.height) return;
     }
     onSpot(next);
@@ -158,12 +183,12 @@ export function ProjectorDial({
     let next: number | null = null;
     if (event.key === "ArrowRight" || event.key === "ArrowUp") next = shown + step;
     else if (event.key === "ArrowLeft" || event.key === "ArrowDown") next = shown - step;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = 90;
+    else if (event.key === "Home") next = PROJECTOR_MIN;
+    else if (event.key === "End") next = PROJECTOR_MAX;
     if (next === null) return;
     event.preventDefault();
     event.stopPropagation();
-    onAngle(Math.min(90, Math.max(0, next)));
+    onAngle(Math.min(PROJECTOR_MAX, Math.max(PROJECTOR_MIN, next)));
   }
 
   return (
@@ -206,15 +231,15 @@ export function ProjectorDial({
         className="gobo-dial-svg"
         viewBox={`0 0 ${ROOM.viewW} ${ROOM.viewH}`}
         role="slider"
-        aria-label="Projector angle. 90 degrees is straight down onto the floor. A beam that is too shallow to reach the floor hits the wall. Drag the projector to move it, or the spot to aim."
-        aria-valuemin={0}
-        aria-valuemax={90}
+        aria-label="Projector angle, from -90 to 90 degrees. 90 degrees is straight down onto the floor. 0 degrees is horizontal into the wall. Negative angles aim up, onto the wall or the ceiling. Drag the projector to move it, or the spot to aim."
+        aria-valuemin={PROJECTOR_MIN}
+        aria-valuemax={PROJECTOR_MAX}
         aria-valuenow={shown}
         aria-valuetext={`${shown} degrees`}
         data-distance={distance}
         data-height={height}
         data-spot={spot.surface}
-        data-aim={spot.surface === "floor" ? spot.aim : 0}
+        data-aim={spot.surface === "wall" ? 0 : spot.aim}
         data-spot-height={spot.surface === "wall" ? spot.height : 0}
         data-angle={angleFromSpot(distance, height, spot)}
         tabIndex={0}
@@ -227,18 +252,21 @@ export function ProjectorDial({
           stroke="#334155"
         />
         <path
-          d={`M${ROOM.wallFace} 22 V${ROOM.floorFace} H${ROOM.roomRight}`}
+          d={`M${ROOM.roomRight} ${ROOM.roomTop} H${ROOM.wallFace} V${ROOM.floorFace} H${ROOM.roomRight}`}
           fill="none"
           stroke="#94a3b8"
           strokeWidth="2.5"
           strokeLinejoin="miter"
         />
         <path
-          d={`M${ROOM.wallFace} ${ROOM.roomTop} H${ROOM.roomRight} V${ROOM.floorFace}`}
+          d={`M${ROOM.roomRight} ${ROOM.roomTop} V${ROOM.floorFace}`}
           fill="none"
           stroke="#1e293b"
           strokeWidth="1.5"
         />
+        <text x={150} y={16} textAnchor="middle" fill="#94a3b8" fontSize="11">
+          Ceiling
+        </text>
         <text
           x={23}
           y={96}

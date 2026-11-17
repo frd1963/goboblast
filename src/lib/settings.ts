@@ -52,21 +52,20 @@ export type GoboSettings = {
   /** Degrees per second. The slider sets this directly. Positive is clockwise. */
   spin: number;
   /**
-   * Beam angle in degrees, 0 to 90, above the floor.
-   * 90° is straight down. Lower angles are shallower. Derived from the projector
-   * position and the spot, which is on the floor or, when the beam reaches the wall
-   * first, on the wall.
+   * Beam angle in degrees, −90 to 90, from horizontal.
+   * 90° is straight down on the floor. 0° is horizontal into the wall. Negative angles
+   * aim up, onto the wall or the ceiling. Derived from the projector position and the spot.
    */
   projectorAngle: number;
   /** 0 is against the wall, 1 is the far side of the room. */
   projectorDistance: number;
   /** 0 is on the floor, 1 is at the ceiling. */
   projectorHeight: number;
-  /** Floor spot, in the same 0–1 distance as the projector. Unused while the spot is on the wall. */
+  /** Floor or ceiling spot, in the same 0–1 distance as the projector. Unused on the wall. */
   projectorAim: number;
   /** Surface the beam is hitting. */
   projectorSpot: BeamSpot["surface"];
-  /** Height of a wall spot. 0 is the corner, 1 is the ceiling. */
+  /** Height of a wall spot. 0 is the floor, 1 is the ceiling. */
   projectorSpotHeight: number;
   /** Lens throw. Sets the beam spread and so how hard an oblique beam keystones. */
   projectorThrow: ProjectorThrow;
@@ -212,7 +211,28 @@ function readPlacement(raw: Partial<GoboSettings>) {
   const aim = finite(raw.projectorAim);
   if (distance === null || height === null || aim === null) {
     const saved = finite(raw.projectorAngle);
-    const placed = placementForAngle(saved === null ? defaultSettings.projectorAngle : saved);
+    const clamped = saved === null ? defaultSettings.projectorAngle : Math.min(90, Math.max(-90, saved));
+    const placed = placementForAngle(clamped);
+    if ("spot" in placed && placed.spot.surface === "wall") {
+      return {
+        projectorDistance: placed.distance,
+        projectorHeight: placed.height,
+        projectorAim: 0,
+        projectorSpot: "wall" as const,
+        projectorSpotHeight: placed.spot.height,
+        projectorAngle: placed.angle,
+      };
+    }
+    if ("spot" in placed && placed.spot.surface === "ceiling") {
+      return {
+        projectorDistance: placed.distance,
+        projectorHeight: placed.height,
+        projectorAim: placed.spot.aim,
+        projectorSpot: "ceiling" as const,
+        projectorSpotHeight: 0,
+        projectorAngle: placed.angle,
+      };
+    }
     return {
       projectorDistance: placed.distance,
       projectorHeight: placed.height,
@@ -224,11 +244,22 @@ function readPlacement(raw: Partial<GoboSettings>) {
   }
   const projectorDistance = round(clamp(distance, DISTANCE_MIN, DISTANCE_MAX, defaultSettings.projectorDistance), 3);
   const projectorHeight = round(clamp(height, HEIGHT_MIN, HEIGHT_MAX, defaultSettings.projectorHeight), 3);
+  if (raw.projectorSpot === "ceiling") {
+    const projectorAim = round(clamp(aim, AIM_MIN, AIM_MAX, defaultSettings.projectorAim), 3);
+    return {
+      projectorDistance,
+      projectorHeight,
+      projectorAim,
+      projectorSpot: "ceiling" as const,
+      projectorSpotHeight: 0,
+      projectorAngle: angleFromSpot(projectorDistance, projectorHeight, {
+        surface: "ceiling",
+        aim: projectorAim,
+      }),
+    };
+  }
   if (raw.projectorSpot === "wall") {
-    const projectorSpotHeight = round(
-      clamp(finite(raw.projectorSpotHeight) ?? 0, 0, projectorHeight, 0),
-      3,
-    );
+    const projectorSpotHeight = round(clamp(finite(raw.projectorSpotHeight) ?? 0, 0, 1, 0), 3);
     return {
       projectorDistance,
       projectorHeight,

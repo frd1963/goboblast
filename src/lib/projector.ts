@@ -1,8 +1,9 @@
 /**
- * Beam angle, in degrees, from 0 to 90.
- * 90° faces the surface straight on and has no skew. Lower angles hit it more obliquely
- * and keystone more. 0° is the strongest taper.
- * The far edge is the top of the gobo. It narrows so the mark lands square on the surface.
+ * Beam angle, in degrees, from −90 to 90.
+ * 90° is straight down and −90° is straight up. Both are perpendicular to the surface
+ * they hit and have no skew. 0° is horizontal. The farther an oblique beam is from
+ * perpendicular, the harder it keystones.
+ * On the floor the far edge is the top of the gobo. On the ceiling that edge is inverted.
  *
  * The gobo is rotated rigidly inside a fixed square, then this one homography is applied
  * to that whole square. The homography depends on the projector angle and the square's
@@ -10,7 +11,7 @@
  * On the screen, a strong keystone still changes the shape as the word swings through the
  * taper — that variation is the projection, not a size change.
  */
-export const PROJECTOR_MIN = 0;
+export const PROJECTOR_MIN = -90;
 export const PROJECTOR_MAX = 90;
 
 const FIT_MARGIN_PX = 28;
@@ -60,7 +61,7 @@ export type Keystone = {
 };
 
 /** Which surface the beam is hitting. The throw is measured against that surface. */
-export type KeystoneTarget = "floor" | "wall";
+export type KeystoneTarget = "floor" | "wall" | "ceiling";
 
 const IDENTITY: HomographyMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
@@ -118,10 +119,11 @@ export function invertHomography(matrix: readonly number[]): HomographyMatrix {
  * square stays on stage. Rotation is not an input.
  *
  * On the floor, 90° is straight down and has no skew. A lower angle hits the floor
- * more obliquely. On the wall, 0° (horizontal, straight into the wall) has no skew.
- * A beam that drops onto the wall is oblique to it, so the same throw sees the
- * complement, and the bottom of the gobo narrows because that edge is farther from
- * a projector sitting above the spot.
+ * more obliquely, and the top of the gobo narrows. On the ceiling, −90° is straight
+ * up and has no skew. The ceiling uses the same throw as a floor beam of the same
+ * obliqueness, with the tilt inverted so the far edge — the one farther from the
+ * projector — narrows. On the wall, 0° is straight on. A beam that drops onto the
+ * wall narrows the bottom. A beam that climbs the wall narrows the top.
  */
 export function keystoneFor(
   angleDeg: number,
@@ -134,12 +136,13 @@ export function keystoneFor(
   const center = "translate(-50%, -50%)";
   if (!(cssSize > 0)) return { matrix: IDENTITY, css: center };
   const diagram = clampAngle(angleDeg);
-  const straightOn = target === "wall" ? clampAngle(90 - diagram) : diagram;
+  const straightOn = target === "wall" ? clampAngle(90 - Math.abs(diagram)) : Math.abs(diagram);
   const ratio = floorKeystoneRatio(straightOn, kind);
   if (ratio > 0.999) return { matrix: IDENTITY, css: center };
   const k = (1 - ratio) / (1 + ratio);
   const magnitude = Math.min(32, (1 - ratio) * 58);
-  const tilt = (target === "wall" ? -1 : 1) * magnitude;
+  const tilt =
+    (target === "ceiling" ? -1 : target === "wall" ? (diagram < 0 ? 1 : -1) : 1) * magnitude;
   const sin = Math.sin((magnitude * Math.PI) / 180);
   if (magnitude < 0.05 || !(sin > 1e-4) || !(k > 1e-4)) return { matrix: IDENTITY, css: center };
   const distance = Math.max(1, ((cssSize / 2) * sin) / k);
