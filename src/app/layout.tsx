@@ -20,6 +20,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${goboFontClassName} gobo-hide-cursor h-full`}>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'if(!location.pathname.endsWith("/"))location.replace(location.pathname+"/"+location.search+location.hash)',
+          }}
+        />
         <link rel="icon" href="./favicon.ico" />
       </head>
       <body className="h-full">{children}</body>

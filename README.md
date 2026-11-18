@@ -45,7 +45,21 @@ BASE_PATH=/gobos docker compose build
 docker compose up -d
 ```
 
-`docker compose build --build-arg BASE_PATH=/gobos` does the same thing. Open [http://localhost:4317/gobos](http://localhost:4317/gobos). The prefix is fixed in the image; change it by building again. Setting `BASE_PATH` only on `docker run` does not move the app.
+`docker compose build --build-arg BASE_PATH=/gobos` does the same thing. Open [http://localhost:4317/gobos/](http://localhost:4317/gobos/). The prefix is fixed in the image; change it by building again. Setting `BASE_PATH` only on `docker run` does not move the app.
+
+### Behind nginx-proxy
+
+Use this when the proxy strips the prefix and the app should not be rebuilt for each path:
+
+```text
+VIRTUAL_HOST=fotoblast.com
+VIRTUAL_PATH=/gobo
+VIRTUAL_DEST=/
+```
+
+Leave `BASE_PATH` unset. nginx-proxy turns `/gobo/` into an upstream request for `//`, and Next would answer `Location: /`, which sends the browser to the host root. This image collapses that repeated slash instead of redirecting, and the page adds a trailing slash in the browser so `./_next/...` stays under `/gobo/`.
+
+Set `BASE_PATH` only when the proxy forwards the prefix unchanged (`VIRTUAL_DEST` unset, or the same as `VIRTUAL_PATH`).
 
 ## How to use it
 

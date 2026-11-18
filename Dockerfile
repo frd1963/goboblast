@@ -30,6 +30,7 @@ RUN addgroup -g 1001 -S nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --chown=nextjs:nodejs server/collapse-slashes.js ./collapse-slashes.js
 
 USER nextjs
 EXPOSE 4317
@@ -37,4 +38,4 @@ EXPOSE 4317
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "const raw=(process.env.BASE_PATH||'').trim();const prefix=!raw?'/':raw.startsWith('/')?raw:'/'+raw;fetch('http://127.0.0.1:'+(process.env.PORT||4317)+prefix).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "server.js"]
+CMD ["node", "--require", "./collapse-slashes.js", "server.js"]
