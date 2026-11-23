@@ -867,23 +867,59 @@ export function GoboStage() {
             >
               <div className="gobo-field">
                 <div className="gobo-dial-row">
-                  <ProjectorDial
-                    distance={settings.projectorDistance}
-                    height={settings.projectorHeight}
-                    spot={spotOf(settings)}
-                    angle={settings.projectorAngle}
-                    horizontalAngle={settings.horizontalAngle}
-                    throwKind={settings.projectorThrow}
-                    onPosition={(projectorDistance, projectorHeight) => {
-                      const current = settingsRef.current;
-                      update(withSpot(projectorDistance, projectorHeight, spotOf(current)));
-                    }}
-                    onSpot={(spot) => {
-                      const { projectorDistance, projectorHeight } = settingsRef.current;
-                      update(withSpot(projectorDistance, projectorHeight, spot));
-                    }}
-                    onAngle={(angle) => aimAt(angle)}
-                  />
+                  <div className="gobo-aim">
+                    <div className="gobo-angle-vertical">
+                      <Label htmlFor="gobo-projector" className="gobo-field-label">
+                        Vertical
+                        <span>{formatDegrees(settings.projectorAngle)}</span>
+                      </Label>
+                      <VerticalAngleSlider
+                        id="gobo-projector"
+                        value={settings.projectorAngle}
+                        min={PROJECTOR_MIN}
+                        max={PROJECTOR_MAX}
+                        onChange={(next) => aimAt(next)}
+                      />
+                    </div>
+                    <ProjectorDial
+                      distance={settings.projectorDistance}
+                      height={settings.projectorHeight}
+                      spot={spotOf(settings)}
+                      angle={settings.projectorAngle}
+                      horizontalAngle={settings.horizontalAngle}
+                      throwKind={settings.projectorThrow}
+                      onPosition={(projectorDistance, projectorHeight) => {
+                        const current = settingsRef.current;
+                        update(withSpot(projectorDistance, projectorHeight, spotOf(current)));
+                      }}
+                      onSpot={(spot, yaw) => {
+                        const { projectorDistance, projectorHeight } = settingsRef.current;
+                        update({
+                          ...withSpot(projectorDistance, projectorHeight, spot),
+                          horizontalAngle: yaw,
+                        });
+                      }}
+                      onAngle={(angle) => aimAt(angle)}
+                    />
+                    <div className="gobo-angle-horizontal">
+                      <Label htmlFor="gobo-horizontal" className="gobo-field-label">
+                        Horizontal
+                        <span>{formatDegrees(settings.horizontalAngle)}</span>
+                      </Label>
+                      <div className="gobo-bipolar">
+                        <span className="gobo-bipolar-zero" aria-hidden="true" />
+                        <Slider
+                          id="gobo-horizontal"
+                          min={HORIZONTAL_MIN}
+                          max={HORIZONTAL_MAX}
+                          step={1}
+                          value={[settings.horizontalAngle]}
+                          aria-label="Horizontal angle"
+                          onValueChange={(next) => update({ horizontalAngle: sliderNumber(next) })}
+                        />
+                      </div>
+                    </div>
+                  </div>
                   <div className="gobo-throw" role="radiogroup" aria-label="Projector throw">
                     <span className="gobo-throw-title">Throw</span>
                     {PROJECTOR_THROWS.map((kind) => (
@@ -902,45 +938,11 @@ export function GoboStage() {
                   </div>
                 </div>
                 <p className="gobo-speed">
-                  Drag the projector to place it. Drag the spot or the vertical slider to aim. 90° is straight
-                  down on the floor, 0° is horizontal into the wall, and a steep negative angle hits the ceiling.
-                  Horizontal aims left and right and keystones the picture sideways.
+                  Drag the projector to place it. Drag the spot to aim up, down, left, and right. On the vertical
+                  slider, up aims up and down aims down, from −90° to 90°. 90° is straight down on the floor, 0°
+                  is level into the wall, and a steep negative angle hits the ceiling. The horizontal slider yaws
+                  from −75° to 75°.
                 </p>
-                <div className="gobo-angles">
-                  <div className="gobo-field">
-                    <Label htmlFor="gobo-projector" className="gobo-field-label">
-                      Vertical
-                      <span>{formatDegrees(settings.projectorAngle)}</span>
-                    </Label>
-                    <Slider
-                      id="gobo-projector"
-                      min={PROJECTOR_MIN}
-                      max={PROJECTOR_MAX}
-                      step={1}
-                      value={[settings.projectorAngle]}
-                      aria-label="Vertical angle"
-                      onValueChange={(next) => aimAt(sliderNumber(next))}
-                    />
-                  </div>
-                  <div className="gobo-field">
-                    <Label htmlFor="gobo-horizontal" className="gobo-field-label">
-                      Horizontal
-                      <span>{formatDegrees(settings.horizontalAngle)}</span>
-                    </Label>
-                    <div className="gobo-bipolar">
-                      <span className="gobo-bipolar-zero" aria-hidden="true" />
-                      <Slider
-                        id="gobo-horizontal"
-                        min={HORIZONTAL_MIN}
-                        max={HORIZONTAL_MAX}
-                        step={1}
-                        value={[settings.horizontalAngle]}
-                        aria-label="Horizontal angle"
-                        onValueChange={(next) => update({ horizontalAngle: sliderNumber(next) })}
-                      />
-                    </div>
-                  </div>
-                </div>
                 <Label className="gobo-check gobo-wall-adjust" htmlFor="gobo-adjust-wall">
                   <Switch
                     id="gobo-adjust-wall"
@@ -1617,6 +1619,83 @@ function PanelSection({
       {children}
     </section>
   );
+}
+
+function VerticalAngleSlider({
+  id,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  id: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  const span = max - min;
+  const fraction = span === 0 ? 0 : (value - min) / span;
+  const ref = useRef<HTMLDivElement>(null);
+
+  function setFromY(clientY: number) {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect || rect.height <= 0) return;
+    const t = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+    onChange(Math.round(min + t * span));
+  }
+
+  return (
+    <div
+      ref={ref}
+      id={id}
+      className="gobo-vert"
+      role="slider"
+      aria-orientation="vertical"
+      aria-label="Vertical angle"
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={value}
+      aria-valuetext={`${value} degrees`}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        event.currentTarget.focus({ preventScroll: true });
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // The value still follows this pointer event.
+        }
+        setFromY(event.clientY);
+      }}
+      onPointerMove={(event) => {
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        setFromY(event.clientY);
+      }}
+      onKeyDown={(event) => {
+        const step = event.shiftKey ? 5 : 1;
+        let next: number | null = null;
+        if (event.key === "ArrowUp" || event.key === "ArrowLeft" || event.key === "PageUp") {
+          next = value - (event.key === "PageUp" ? 10 : step);
+        } else if (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "PageDown") {
+          next = value + (event.key === "PageDown" ? 10 : step);
+        } else if (event.key === "Home") next = min;
+        else if (event.key === "End") next = max;
+        if (next === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onChange(Math.min(max, Math.max(min, next)));
+      }}
+    >
+      <span className="gobo-vert-fill" aria-hidden="true" style={verticalFill(fraction, value)} />
+      <span className="gobo-vert-zero" aria-hidden="true" />
+      <span className="gobo-vert-thumb" aria-hidden="true" style={{ top: `${fraction * 100}%` }} />
+    </div>
+  );
+}
+
+function verticalFill(fraction: number, value: number): { top: string; bottom: string } {
+  if (value >= 0) return { top: "50%", bottom: `${(1 - fraction) * 100}%` };
+  return { top: `${fraction * 100}%`, bottom: "50%" };
 }
 
 function SliderField({

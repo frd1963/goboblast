@@ -4,9 +4,9 @@ import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 import {
   ROOM,
   angleFromSpot,
-  clampAim,
   clampDistance,
   clampHeight,
+  spotForAngle,
   type BeamSpot,
 } from "@/lib/placement";
 import {
@@ -14,112 +14,209 @@ import {
   HORIZONTAL_MIN,
   PROJECTOR_MAX,
   PROJECTOR_MIN,
-  THROW_RATIO,
+  throwSpread,
   type ProjectorThrow,
 } from "@/lib/projector";
 
-type Point = { x: number; y: number };
+type V3 = { x: number; y: number; z: number };
 type DragMode = "projector" | "aim";
 
-function lensPoint(distance: number, height: number): Point {
+/**
+ * One-point view of the room. The camera sits in front of the open side, a little
+ * to the right, so the floor, back wall, ceiling, and both side walls all show.
+ * World units match the side-view scales: Y is ROOM.height, Z is ROOM.width.
+ */
+const SCENE = {
+  viewW: 312,
+  viewH: 224,
+  cx: 226,
+  cy: 126,
+  focal: 560,
+  camX: 64,
+  camY: 72,
+  camZ: ROOM.width + 480,
+  halfX: 118,
+} as const;
+
+function add(a: V3, b: V3): V3 {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+function mul(a: V3, scale: number): V3 {
+  return { x: a.x * scale, y: a.y * scale, z: a.z * scale };
+}
+
+function norm(v: V3): V3 {
+  const length = Math.hypot(v.x, v.y, v.z);
+  if (!(length > 1e-6)) return { x: 0, y: 0, z: -1 };
+  return { x: v.x / length, y: v.y / length, z: v.z / length };
+}
+
+function cross(a: V3, b: V3): V3 {
   return {
-    x: ROOM.wallFace + distance * ROOM.width,
-    y: ROOM.floorFace - height * ROOM.height,
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
   };
 }
 
-function spotPoint(spot: BeamSpot): Point {
-  if (spot.surface === "wall") {
-    return { x: ROOM.wallFace, y: ROOM.floorFace - spot.height * ROOM.height };
-  }
-  if (spot.surface === "ceiling") {
-    return { x: ROOM.wallFace + spot.aim * ROOM.width, y: ROOM.roomTop };
-  }
-  return { x: ROOM.wallFace + spot.aim * ROOM.width, y: ROOM.floorFace };
+function project(p: V3) {
+  const depth = SCENE.camZ - p.z;
+  const safe = Math.abs(depth) < 1 ? (depth < 0 ? -1 : 1) : depth;
+  const u = (p.x - SCENE.camX) / safe;
+  const v = (p.y - SCENE.camY) / safe;
+  return { x: SCENE.cx + u * SCENE.focal, y: SCENE.cy - v * SCENE.focal };
 }
 
-function spotFromPointer(point: Point): BeamSpot {
-  const nearWall = point.x <= ROOM.wallFace + 20;
-  const onCeiling = point.y <= ROOM.roomTop + 14 && point.x >= ROOM.wallFace - 8;
-  if (onCeiling && (!nearWall || point.y <= ROOM.roomTop + 6)) {
-    const aim = nearWall ? 0 : clampAim((point.x - ROOM.wallFace) / ROOM.width);
-    return { surface: "ceiling", aim };
-  }
-  const aboveFloor = point.y < ROOM.floorFace - 6;
-  if (aboveFloor && nearWall) {
-    const y = Math.min(ROOM.floorFace, Math.max(ROOM.roomTop, point.y));
-    const spotHeight = Math.round(((ROOM.floorFace - y) / ROOM.height) * 1000) / 1000;
-    if (spotHeight <= 0.01) return { surface: "floor", aim: 0 };
-    if (spotHeight >= 0.99) return { surface: "ceiling", aim: 0 };
-    return { surface: "wall", height: Math.min(1, spotHeight) };
-  }
-  if (point.y <= ROOM.roomTop + 10) {
-    return { surface: "ceiling", aim: clampAim((point.x - ROOM.wallFace) / ROOM.width) };
-  }
-  return { surface: "floor", aim: clampAim((point.x - ROOM.wallFace) / ROOM.width) };
-}
-
-function shortestTurn(from: number, to: number) {
-  let delta = to - from;
-  while (delta > 180) delta -= 360;
-  while (delta < -180) delta += 360;
-  return delta;
-}
-
-function beamDegrees(from: Point, to: Point) {
-  return (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
-}
-
-function arcPath(origin: Point, fromDeg: number, toDeg: number, radius: number) {
-  const start = (fromDeg * Math.PI) / 180;
-  const end = (toDeg * Math.PI) / 180;
-  const x1 = origin.x + radius * Math.cos(start);
-  const y1 = origin.y + radius * Math.sin(start);
-  const x2 = origin.x + radius * Math.cos(end);
-  const y2 = origin.y + radius * Math.sin(end);
-  const span = Math.abs(toDeg - fromDeg);
-  const large = span > 180 ? 1 : 0;
-  const sweep = toDeg > fromDeg ? 1 : 0;
-  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${radius} ${radius} 0 ${large} ${sweep} ${x2.toFixed(2)} ${y2.toFixed(2)}`;
-}
-
-/**
- * Position along the room outline, in diagram pixels.
- * 0 is the floor at the wall. Positive runs out across the floor.
- * Negative runs up the wall, then out across the ceiling.
- */
-function spotAlong(spot: BeamSpot) {
-  if (spot.surface === "wall") return -spot.height * ROOM.height;
-  if (spot.surface === "ceiling") return -ROOM.height - spot.aim * ROOM.width;
-  return spot.aim * ROOM.width;
-}
-
-function pointAlong(along: number): Point {
-  if (along >= 0) return { x: ROOM.wallFace + along, y: ROOM.floorFace };
-  if (along >= -ROOM.height) return { x: ROOM.wallFace, y: ROOM.floorFace + along };
-  return { x: ROOM.wallFace + Math.min(ROOM.width, -ROOM.height - along), y: ROOM.roomTop };
-}
-
-/**
- * The lit patch is `throw distance / throw ratio` long, centered on the spot.
- * Throw distance is the beam from the lens to the spot. A patch that runs past a
- * corner continues on the next surface, and stops at the far side of the room.
- */
-function beamPoints(lens: Point, spot: BeamSpot, kind: ProjectorThrow) {
-  const center = spotPoint(spot);
-  const along = spotAlong(spot);
-  const distance = Math.hypot(center.x - lens.x, center.y - lens.y);
-  const half = distance / (2 * THROW_RATIO[kind]);
-  const start = Math.max(-(ROOM.height + ROOM.width), along - half);
-  const end = Math.min(ROOM.width, along + half);
-  const marks = [start, ...[0, -ROOM.height].filter((mark) => mark > start && mark < end), end];
-  const outline: number[] = [];
-  for (const mark of marks) {
-    if (outline.length === 0 || mark - outline[outline.length - 1] > 0.05) outline.push(mark);
-  }
-  return [lens, ...outline.map(pointAlong)]
-    .map((point) => `${Math.round(point.x * 10) / 10},${Math.round(point.y * 10) / 10}`)
+function pointsOf(pts: V3[]) {
+  return pts
+    .map((point) => {
+      const screen = project(point);
+      return `${screen.x.toFixed(1)},${screen.y.toFixed(1)}`;
+    })
     .join(" ");
+}
+
+function inRange(value: number, min: number, max: number, pad = 2) {
+  return value >= min - pad && value <= max + pad;
+}
+
+/** First room face the ray meets: floor, ceiling, back wall, or either side wall. */
+function hitRoom(origin: V3, dir: V3): V3 | null {
+  const x = SCENE.halfX;
+  const yMax = ROOM.height;
+  const zMax = ROOM.width;
+  let bestT = Infinity;
+  let best: V3 | null = null;
+  const consider = (axis: "x" | "y" | "z", value: number, inside: (point: V3) => boolean) => {
+    const component = dir[axis];
+    if (Math.abs(component) < 1e-8) return;
+    const t = (value - origin[axis]) / component;
+    if (t < 0.04 || t >= bestT) return;
+    const point = add(origin, mul(dir, t));
+    if (!inside(point)) return;
+    bestT = t;
+    best = point;
+  };
+  consider("y", 0, (point) => inRange(point.x, -x, x) && inRange(point.z, 0, zMax));
+  consider("y", yMax, (point) => inRange(point.x, -x, x) && inRange(point.z, 0, zMax));
+  consider("z", 0, (point) => inRange(point.x, -x, x) && inRange(point.y, 0, yMax));
+  consider("x", -x, (point) => inRange(point.y, 0, yMax) && inRange(point.z, 0, zMax));
+  consider("x", x, (point) => inRange(point.y, 0, yMax) && inRange(point.z, 0, zMax));
+  return best;
+}
+
+function screenRay(sx: number, sy: number) {
+  const u = (sx - SCENE.cx) / SCENE.focal;
+  const v = (SCENE.cy - sy) / SCENE.focal;
+  return { origin: { x: SCENE.camX, y: SCENE.camY, z: SCENE.camZ }, dir: norm({ x: u, y: v, z: -1 }) };
+}
+
+function hitPlaneX(origin: V3, dir: V3, x: number): V3 | null {
+  if (Math.abs(dir.x) < 1e-6) return null;
+  const t = (x - origin.x) / dir.x;
+  if (!(t > 0)) return null;
+  return add(origin, mul(dir, t));
+}
+
+/**
+ * Beam direction in world pixels. Pitch uses the stored angle: positive aims down.
+ * Yaw turns that beam to the right. A nearly vertical beam gets a small lean so the
+ * yaw stays visible instead of collapsing onto the plumb line.
+ */
+function beamDirection(angleDeg: number, yawDeg: number): V3 {
+  const pitch = (Math.min(PROJECTOR_MAX, Math.max(PROJECTOR_MIN, angleDeg)) * Math.PI) / 180;
+  const yaw = (Math.min(HORIZONTAL_MAX, Math.max(HORIZONTAL_MIN, yawDeg)) * Math.PI) / 180;
+  const cosPitch = Math.cos(pitch);
+  const lean = Math.abs(cosPitch) < 0.18 ? 0.18 - Math.abs(cosPitch) : 0;
+  const across = cosPitch + lean;
+  return norm({
+    x: Math.sin(yaw) * across,
+    y: -Math.sin(pitch),
+    z: -Math.cos(yaw) * across,
+  });
+}
+
+function cast(origin: V3, dir: V3, fallback: number): V3 {
+  return hitRoom(origin, dir) ?? add(origin, mul(norm(dir), fallback));
+}
+
+function beamPatch(origin: V3, dir: V3, spread: number, reach: number): V3[] {
+  const forward = norm(dir);
+  const upHint = Math.abs(forward.y) > 0.92 ? { x: 0, y: 0, z: -1 } : { x: 0, y: 1, z: 0 };
+  const right = norm(cross(forward, upHint));
+  const up = norm(cross(right, forward));
+  return [
+    [1, 1],
+    [1, -1],
+    [-1, -1],
+    [-1, 1],
+  ].map(([side, lift]) =>
+    cast(origin, norm(add(forward, add(mul(right, side * spread), mul(up, lift * spread)))), reach),
+  );
+}
+
+function sameSpot(a: BeamSpot, b: BeamSpot) {
+  if (a.surface !== b.surface) return false;
+  if (a.surface === "wall" && b.surface === "wall") return a.height === b.height;
+  if (a.surface !== "wall" && b.surface !== "wall") return a.aim === b.aim;
+  return false;
+}
+
+function roomFaces() {
+  const x = SCENE.halfX;
+  const y = ROOM.height;
+  const z = ROOM.width;
+  const corner = (cx: number, cy: number, cz: number): V3 => ({ x: cx, y: cy, z: cz });
+  return [
+    {
+      name: "ceiling",
+      fill: "#111827",
+      stroke: "#475569",
+      points: [corner(-x, y, 0), corner(x, y, 0), corner(x, y, z), corner(-x, y, z)],
+    },
+    {
+      name: "wall",
+      fill: "#1e293b",
+      stroke: "#94a3b8",
+      points: [corner(-x, 0, 0), corner(x, 0, 0), corner(x, y, 0), corner(-x, y, 0)],
+    },
+    {
+      name: "left",
+      fill: "#0c1322",
+      stroke: "#334155",
+      points: [corner(-x, 0, 0), corner(-x, 0, z), corner(-x, y, z), corner(-x, y, 0)],
+    },
+    {
+      name: "right",
+      fill: "#162033",
+      stroke: "#334155",
+      points: [corner(x, 0, 0), corner(x, 0, z), corner(x, y, z), corner(x, y, 0)],
+    },
+    {
+      name: "floor",
+      fill: "#0b1220",
+      stroke: "#94a3b8",
+      points: [corner(-x, 0, 0), corner(x, 0, 0), corner(x, 0, z), corner(-x, 0, z)],
+    },
+  ];
+}
+
+function floorLines() {
+  const x = SCENE.halfX;
+  const z = ROOM.width;
+  const lines: V3[][] = [];
+  for (const step of [0.25, 0.5, 0.75]) {
+    lines.push([
+      { x: -x, y: 0, z: z * step },
+      { x, y: 0, z: z * step },
+    ]);
+    lines.push([
+      { x: -x + 2 * x * step, y: 0, z: 0 },
+      { x: -x + 2 * x * step, y: 0, z },
+    ]);
+  }
+  return lines;
 }
 
 export function ProjectorDial({
@@ -140,56 +237,44 @@ export function ProjectorDial({
   horizontalAngle: number;
   throwKind: ProjectorThrow;
   onPosition: (distance: number, height: number) => void;
-  onSpot: (spot: BeamSpot) => void;
+  onSpot: (spot: BeamSpot, horizontalAngle: number) => void;
   onAngle: (angle: number) => void;
 }) {
   const mode = useRef<DragMode | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const lens = lensPoint(distance, height);
-  const spotAt = spotPoint(spot);
-  const rotation = beamDegrees(lens, spotAt);
+  const origin: V3 = { x: 0, y: height * ROOM.height, z: distance * ROOM.width };
+  const direction = beamDirection(angle, horizontalAngle);
+  const reach = Math.hypot(ROOM.width, ROOM.height);
+  const hit = cast(origin, direction, reach);
+  const patch = beamPatch(origin, direction, throwSpread(throwKind), reach);
+  const lens = project(origin);
+  const spotAt = project(hit);
   const shown = Math.round(angle);
-  const horizontal = spotAt.x < lens.x ? 180 : 0;
-  const delta = shortestTurn(horizontal, rotation);
-  const arc = Math.abs(delta) > 2 && Math.abs(delta) < 88 ? arcPath(lens, horizontal, horizontal + delta, 24) : "";
-  const beam = beamPoints(lens, spot, throwKind);
+  const yawShown = Math.round(horizontalAngle);
+  const beamAngle = (Math.atan2(spotAt.y - lens.y, spotAt.x - lens.x) * 180) / Math.PI;
+  const foot: V3 = { x: 0, y: 0, z: origin.z };
+  const yaw = (yawShown * Math.PI) / 180;
+  const heading: V3 = {
+    x: Math.sin(yaw) * 46,
+    y: 0,
+    z: origin.z - Math.cos(yaw) * 46,
+  };
+  const forward: V3 = { x: 0, y: origin.y, z: origin.z - 34 };
 
-  function viewPoint(event: PointerEvent<HTMLDivElement>): Point | null {
+  function viewPoint(event: PointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
     return {
-      x: ((event.clientX - rect.left) / rect.width) * ROOM.viewW,
-      y: ((event.clientY - rect.top) / rect.height) * ROOM.viewH,
+      x: ((event.clientX - rect.left) / rect.width) * SCENE.viewW,
+      y: ((event.clientY - rect.top) / rect.height) * SCENE.viewH,
     };
   }
 
-  function chooseMode(point: Point): DragMode | null {
-    if (Math.hypot(point.x - spotAt.x, point.y - spotAt.y) <= 16) return "aim";
-    if (Math.hypot(point.x - lens.x, point.y - lens.y) <= 26) return "projector";
-    const onFloor =
-      point.y >= ROOM.floorFace - 12 &&
-      point.y <= ROOM.floorFace + 16 &&
-      point.x >= ROOM.wallFace - 8 &&
-      point.x <= ROOM.roomRight;
-    if (onFloor) return "aim";
-    const onCeiling =
-      point.y <= ROOM.roomTop + 14 &&
-      point.y >= ROOM.roomTop - 16 &&
-      point.x >= ROOM.wallFace - 8 &&
-      point.x <= ROOM.roomRight;
-    if (onCeiling) return "aim";
-    const onWall =
-      point.x <= ROOM.wallFace + 20 &&
-      point.x >= 8 &&
-      point.y >= ROOM.roomTop &&
-      point.y <= ROOM.floorFace;
-    if (onWall) return "aim";
-    const inRoom =
-      point.x >= ROOM.wallFace &&
-      point.x <= ROOM.roomRight &&
-      point.y >= ROOM.roomTop &&
-      point.y <= ROOM.floorFace;
-    if (inRoom) return "projector";
+  function chooseMode(point: { x: number; y: number }): DragMode | null {
+    if (Math.hypot(point.x - spotAt.x, point.y - spotAt.y) <= 20) return "aim";
+    if (Math.hypot(point.x - lens.x, point.y - lens.y) <= 28) return "projector";
+    const ray = screenRay(point.x, point.y);
+    if (hitRoom(ray.origin, ray.dir)) return "aim";
     return null;
   }
 
@@ -198,20 +283,29 @@ export function ProjectorDial({
     if (!dragging) return;
     const point = viewPoint(event);
     if (!point) return;
+    const ray = screenRay(point.x, point.y);
     if (dragging === "projector") {
-      const nextDistance = clampDistance((point.x - ROOM.wallFace) / ROOM.width);
-      const nextHeight = clampHeight((ROOM.floorFace - point.y) / ROOM.height);
+      const next = hitPlaneX(ray.origin, ray.dir, 0);
+      if (!next) return;
+      const nextDistance = clampDistance(next.z / ROOM.width);
+      const nextHeight = clampHeight(next.y / ROOM.height);
       if (nextDistance === distance && nextHeight === height) return;
       onPosition(nextDistance, nextHeight);
       return;
     }
-    const next = spotFromPointer(point);
-    if (next.surface === spot.surface) {
-      if (next.surface === "floor" && spot.surface === "floor" && next.aim === spot.aim) return;
-      if (next.surface === "ceiling" && spot.surface === "ceiling" && next.aim === spot.aim) return;
-      if (next.surface === "wall" && spot.surface === "wall" && next.height === spot.height) return;
-    }
-    onSpot(next);
+    const landed = hitRoom(ray.origin, ray.dir);
+    if (!landed) return;
+    const vx = landed.x - origin.x;
+    const vy = landed.y - origin.y;
+    const vz = landed.z - origin.z;
+    const horiz = Math.hypot(vx, vz);
+    let nextYaw = yawShown;
+    if (horiz > 8) nextYaw = Math.round((Math.atan2(vx, -vz) * 180) / Math.PI);
+    nextYaw = Math.min(HORIZONTAL_MAX, Math.max(HORIZONTAL_MIN, nextYaw));
+    const pitch = (Math.atan2(-vy, Math.max(horiz, 0.001)) * 180) / Math.PI;
+    const placed = spotForAngle(distance, height, pitch, vz <= 4);
+    if (sameSpot(placed.spot, spot) && nextYaw === yawShown) return;
+    onSpot(placed.spot, nextYaw);
   }
 
   function onKeyDown(event: KeyboardEvent<SVGSVGElement>) {
@@ -226,6 +320,20 @@ export function ProjectorDial({
     event.stopPropagation();
     onAngle(Math.min(PROJECTOR_MAX, Math.max(PROJECTOR_MIN, next)));
   }
+
+  const pitchArc =
+    Math.abs(shown) > 2
+      ? Array.from({ length: 9 }, (_, index) => {
+          const step = ((shown * index) / 8) * (Math.PI / 180);
+          return project({
+            x: origin.x,
+            y: origin.y - Math.sin(step) * 30,
+            z: origin.z - Math.cos(step) * 30,
+          });
+        })
+          .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+          .join(" ")
+      : "";
 
   return (
     <div
@@ -265,13 +373,13 @@ export function ProjectorDial({
       <svg
         ref={svgRef}
         className="gobo-dial-svg"
-        viewBox={`0 0 ${ROOM.viewW} ${ROOM.viewH}`}
+        viewBox={`0 0 ${SCENE.viewW} ${SCENE.viewH}`}
         role="slider"
-        aria-label="Projector angle, from -90 to 90 degrees. 90 degrees is straight down onto the floor. 0 degrees is horizontal into the wall. Negative angles aim up, onto the wall or the ceiling. Drag the projector to move it, or the spot to aim."
+        aria-label="Room diagram. Drag the projector to place it. Drag the spot to aim up, down, left, and right. 90 degrees is straight down onto the floor. 0 degrees is level into the wall. Negative angles aim up."
         aria-valuemin={PROJECTOR_MIN}
         aria-valuemax={PROJECTOR_MAX}
         aria-valuenow={shown}
-        aria-valuetext={`${shown} degrees`}
+        aria-valuetext={`${shown} degrees vertical, ${yawShown} degrees horizontal`}
         data-distance={distance}
         data-height={height}
         data-spot={spot.surface}
@@ -279,50 +387,82 @@ export function ProjectorDial({
         data-spot-height={spot.surface === "wall" ? spot.height : 0}
         data-angle={angleFromSpot(distance, height, spot)}
         data-horizontal={horizontalAngle}
+        data-room="3d"
         tabIndex={0}
         onKeyDown={onKeyDown}
       >
-        <rect width={ROOM.viewW} height={ROOM.viewH} rx="8" fill="#020617" />
-        <path
-          d={`M10 22 H${ROOM.wallFace} V${ROOM.floorFace} H${ROOM.roomRight} V188 H10 Z`}
-          fill="#0f172a"
-          stroke="#334155"
-        />
-        <path
-          d={`M${ROOM.roomRight} ${ROOM.roomTop} H${ROOM.wallFace} V${ROOM.floorFace} H${ROOM.roomRight}`}
-          fill="none"
-          stroke="#94a3b8"
-          strokeWidth="2.5"
-          strokeLinejoin="miter"
-        />
-        <path
-          d={`M${ROOM.roomRight} ${ROOM.roomTop} V${ROOM.floorFace}`}
-          fill="none"
-          stroke="#1e293b"
-          strokeWidth="1.5"
-        />
-        <text x={150} y={16} textAnchor="middle" fill="#94a3b8" fontSize="11">
-          Ceiling
-        </text>
+        <rect width={SCENE.viewW} height={SCENE.viewH} rx="8" fill="#020617" />
+        {roomFaces().map((face) => (
+          <polygon
+            key={face.name}
+            data-face={face.name}
+            points={pointsOf(face.points)}
+            fill={face.fill}
+            stroke={face.stroke}
+            strokeWidth={face.name === "left" || face.name === "right" ? 1 : 1.6}
+            strokeLinejoin="miter"
+          />
+        ))}
+        {floorLines().map((line, index) => (
+          <polyline
+            key={index}
+            points={pointsOf(line)}
+            fill="none"
+            stroke="#1e293b"
+            strokeWidth="1"
+          />
+        ))}
         <text
-          x={23}
-          y={96}
+          x={project({ x: -SCENE.halfX * 0.42, y: ROOM.height * 0.72, z: 2 }).x}
+          y={project({ x: -SCENE.halfX * 0.42, y: ROOM.height * 0.72, z: 2 }).y}
           textAnchor="middle"
           fill="#94a3b8"
           fontSize="11"
-          transform="rotate(-90 23 96)"
         >
           Wall
         </text>
-        <text x={214} y={184} textAnchor="middle" fill="#94a3b8" fontSize="11">
+        <text
+          x={project({ x: 0, y: ROOM.height - 2, z: ROOM.width * 0.46 }).x}
+          y={project({ x: 0, y: ROOM.height - 2, z: ROOM.width * 0.46 }).y}
+          textAnchor="middle"
+          fill="#94a3b8"
+          fontSize="11"
+        >
+          Ceiling
+        </text>
+        <text
+          x={project({ x: 8, y: 2, z: ROOM.width * 0.72 }).x}
+          y={project({ x: 8, y: 2, z: ROOM.width * 0.72 }).y}
+          textAnchor="middle"
+          fill="#94a3b8"
+          fontSize="11"
+        >
           Floor
+        </text>
+        <text
+          x={project({ x: -SCENE.halfX + 16, y: 10, z: ROOM.width * 0.62 }).x}
+          y={project({ x: -SCENE.halfX + 16, y: 10, z: ROOM.width * 0.62 }).y}
+          textAnchor="middle"
+          fill="#64748b"
+          fontSize="10"
+        >
+          L
+        </text>
+        <text
+          x={project({ x: SCENE.halfX - 16, y: 10, z: ROOM.width * 0.62 }).x}
+          y={project({ x: SCENE.halfX - 16, y: 10, z: ROOM.width * 0.62 }).y}
+          textAnchor="middle"
+          fill="#64748b"
+          fontSize="10"
+        >
+          R
         </text>
 
         <line
           x1={lens.x}
           y1={lens.y}
-          x2={lens.x}
-          y2={ROOM.floorFace}
+          x2={project(foot).x}
+          y2={project(foot).y}
           stroke="#334155"
           strokeWidth="1"
           strokeDasharray="3 4"
@@ -330,14 +470,26 @@ export function ProjectorDial({
         <line
           x1={lens.x}
           y1={lens.y}
-          x2={lens.x + (spotAt.x < lens.x ? -18 : 18)}
-          y2={lens.y}
+          x2={project(forward).x}
+          y2={project(forward).y}
           stroke="#334155"
           strokeWidth="1"
           strokeDasharray="3 4"
         />
+        <line
+          x1={project(foot).x}
+          y1={project(foot).y}
+          x2={project(heading).x}
+          y2={project(heading).y}
+          stroke="#818cf8"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+        {pitchArc ? (
+          <polyline points={pitchArc} fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" />
+        ) : null}
 
-        <polygon points={beam} data-throw={throwKind} fill="rgba(248, 250, 252, 0.16)" />
+        <polygon points={pointsOf(patch)} data-throw={throwKind} fill="rgba(248, 250, 252, 0.2)" />
         <line
           x1={lens.x}
           y1={lens.y}
@@ -347,35 +499,21 @@ export function ProjectorDial({
           strokeWidth="1.6"
           strokeLinecap="round"
         />
-        {arc ? <path d={arc} fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" /> : null}
         <circle cx={spotAt.x} cy={spotAt.y} r="6" fill="#f8fafc" stroke="#6366f1" strokeWidth="2" />
 
-        <g transform={`translate(${lens.x} ${lens.y}) rotate(${rotation})`}>
+        <g transform={`translate(${lens.x} ${lens.y}) rotate(${beamAngle})`}>
           <rect x={-32} y={-9} width={20} height={18} rx={3} fill="#0f172a" stroke="#cbd5e1" strokeWidth="1.5" />
           <rect x={-13} y={-5} width={10} height={10} rx={2} fill="#e2e8f0" />
           <circle cx={0} cy={0} r={2.8} fill="#6366f1" />
         </g>
         <circle cx={lens.x} cy={lens.y} r={2} fill="#020617" />
 
-        <text x={ROOM.viewW - 12} y={16} textAnchor="end" fill="#c7d2fe" fontSize="16" fontWeight="700">
+        <text x={SCENE.viewW - 10} y={18} textAnchor="end" fill="#c7d2fe" fontSize="16" fontWeight="700">
           {shown}°
         </text>
-        <g aria-hidden="true" data-yaw={horizontalAngle}>
-          <text x={178} y={15} textAnchor="middle" fill="#64748b" fontSize="9">
-            L
-          </text>
-          <line x1={188} y1={11} x2={230} y2={11} stroke="#334155" strokeWidth="2" strokeLinecap="round" />
-          <line x1={209} y1={7} x2={209} y2={15} stroke="#64748b" strokeWidth="1" />
-          <circle
-            cx={209 + (Math.max(HORIZONTAL_MIN, Math.min(HORIZONTAL_MAX, horizontalAngle)) / HORIZONTAL_MAX) * 18}
-            cy={11}
-            r={3.1}
-            fill="#c7d2fe"
-          />
-          <text x={240} y={15} textAnchor="middle" fill="#64748b" fontSize="9">
-            R
-          </text>
-        </g>
+        <text x={SCENE.viewW - 10} y={34} textAnchor="end" fill="#a5b4fc" fontSize="12">
+          {yawShown}° yaw
+        </text>
       </svg>
     </div>
   );

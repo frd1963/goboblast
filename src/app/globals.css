@@ -406,24 +406,108 @@ html:-webkit-full-screen body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.5rem;
-  align-items: center;
+  align-items: start;
 }
 
-.gobo-angles {
+.gobo-aim {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.35rem 0.75rem;
-  margin-top: 0.35rem;
+  grid-template-columns: 3.4rem minmax(0, 1fr);
+  grid-template-areas:
+    "vert dial"
+    "horiz horiz";
+  gap: 0.4rem 0.45rem;
+  align-items: stretch;
+  min-width: 0;
 }
 
-.gobo-angles .gobo-field {
-  margin-bottom: 0.35rem;
+.gobo-aim .gobo-dial {
+  grid-area: dial;
+  margin: 0;
 }
 
-@media (max-width: 360px) {
-  .gobo-angles {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.gobo-angle-vertical {
+  grid-area: vert;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.gobo-angle-vertical .gobo-field-label {
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 0.2rem;
+  text-align: center;
+  font-size: 0.72rem;
+}
+
+.gobo-angle-horizontal {
+  grid-area: horiz;
+}
+
+.gobo-vert {
+  position: relative;
+  flex: 1;
+  width: 1.35rem;
+  min-height: 8.5rem;
+  margin-inline: auto;
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.gobo-vert::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 0.35rem;
+  border-radius: 999px;
+  background: #334155;
+  transform: translateX(-50%);
+}
+
+.gobo-vert-fill {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  width: 0.35rem;
+  border-radius: 999px;
+  background: #6366f1;
+  transform: translateX(-50%);
+}
+
+.gobo-vert-zero {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 50%;
+  width: 0.85rem;
+  height: 1px;
+  background: #94a3b8;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.gobo-vert-thumb {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid #6366f1;
+  border-radius: 999px;
+  background: #e2e8f0;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.gobo-vert:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 3px;
 }
 
 .gobo-throw {
