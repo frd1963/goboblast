@@ -29,6 +29,8 @@ import { parseHex, rgbToHex } from "@/lib/gobo-key";
 import { clearGoboImage, loadGoboImage, saveGoboImage } from "@/lib/gobo-store";
 import { angleFromSpot, clampSpot, spotForAngle, type BeamSpot } from "@/lib/placement";
 import {
+  HORIZONTAL_MAX,
+  HORIZONTAL_MIN,
   PROJECTOR_MAX,
   PROJECTOR_MIN,
   PROJECTOR_THROWS,
@@ -171,7 +173,7 @@ export function GoboStage() {
     if (!canvas || frames.length === 0) return;
     const index = frameIndex(angleRef.current);
     const cssSize = cssSizeRef.current;
-    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.adjustForWall ? 1 : 0}:${settingsRef.current.evenBrightness ? settingsRef.current.evenBrightnessAmount : 0}:${settingsRef.current.projectorAngle}:${settingsRef.current.projectorThrow}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
+    const stamp = `${settingsRef.current.projectorSpot}:${settingsRef.current.adjustForWall ? 1 : 0}:${settingsRef.current.evenBrightness ? settingsRef.current.evenBrightnessAmount : 0}:${settingsRef.current.projectorAngle}:${settingsRef.current.horizontalAngle}:${settingsRef.current.projectorThrow}:${cssSize}:${window.innerWidth}x${window.innerHeight}`;
     if (index === shownFrameRef.current && canvas.dataset.placement === stamp) return;
     const bitmap = frames[index];
     if (!bitmap) return;
@@ -224,9 +226,11 @@ export function GoboStage() {
       window.innerHeight,
       target,
       settingsRef.current.projectorThrow,
+      settingsRef.current.horizontalAngle,
     );
     canvas.dataset.homography = JSON.stringify(placed.matrix);
     canvas.dataset.projector = String(settingsRef.current.projectorAngle);
+    canvas.dataset.horizontal = String(settingsRef.current.horizontalAngle);
     canvas.dataset.throw = settingsRef.current.projectorThrow;
     canvas.dataset.keystone = target;
     canvas.dataset.surface = "floor";
@@ -297,6 +301,7 @@ export function GoboStage() {
     saveSettings(next);
     if (
       patch.projectorAngle !== undefined ||
+      patch.horizontalAngle !== undefined ||
       patch.projectorDistance !== undefined ||
       patch.projectorHeight !== undefined ||
       patch.projectorAim !== undefined ||
@@ -537,7 +542,7 @@ export function GoboStage() {
     paintFrame();
     // Redraws through refs when the throw changes. The spin loop is separate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.projectorAngle, settings.projectorSpot, settings.adjustForWall, settings.evenBrightness, settings.evenBrightnessAmount, settings.projectorThrow, settings.surface, viewport.w, viewport.h]);
+  }, [settings.projectorAngle, settings.horizontalAngle, settings.projectorSpot, settings.adjustForWall, settings.evenBrightness, settings.evenBrightnessAmount, settings.projectorThrow, settings.surface, viewport.w, viewport.h]);
 
   const frameKey = [
     settings.text,
@@ -765,6 +770,7 @@ export function GoboStage() {
       data-panel={open ? "open" : "closed"}
       data-spin={settings.spin}
       data-projector={settings.projectorAngle}
+      data-horizontal={settings.horizontalAngle}
       data-keystone={settings.projectorSpot}
       data-surface={settings.surface}
       data-source={settings.source}
@@ -829,9 +835,10 @@ export function GoboStage() {
             <PanelSection
               className="gobo-col-projection"
               title="Projection"
-              value={formatDegrees(settings.projectorAngle)}
+              value={`${formatDegrees(settings.projectorAngle)} · ${formatDegrees(settings.horizontalAngle)}`}
               changed={sectionChanged(settings, [
                 "projectorAngle",
+                "horizontalAngle",
                 "projectorDistance",
                 "projectorHeight",
                 "projectorAim",
@@ -845,6 +852,7 @@ export function GoboStage() {
               onReset={() =>
                 update({
                   projectorAngle: defaultSettings.projectorAngle,
+                  horizontalAngle: defaultSettings.horizontalAngle,
                   projectorDistance: defaultSettings.projectorDistance,
                   projectorHeight: defaultSettings.projectorHeight,
                   projectorAim: defaultSettings.projectorAim,
@@ -858,16 +866,13 @@ export function GoboStage() {
               }
             >
               <div className="gobo-field">
-                <Label htmlFor="gobo-projector" className="gobo-field-label">
-                  Angle
-                  <span>{formatDegrees(settings.projectorAngle)}</span>
-                </Label>
                 <div className="gobo-dial-row">
                   <ProjectorDial
                     distance={settings.projectorDistance}
                     height={settings.projectorHeight}
                     spot={spotOf(settings)}
                     angle={settings.projectorAngle}
+                    horizontalAngle={settings.horizontalAngle}
                     throwKind={settings.projectorThrow}
                     onPosition={(projectorDistance, projectorHeight) => {
                       const current = settingsRef.current;
@@ -897,18 +902,45 @@ export function GoboStage() {
                   </div>
                 </div>
                 <p className="gobo-speed">
-                  Drag the projector to place it. Drag the spot or the slider to aim. 90° is straight down on
-                  the floor, 0° is horizontal into the wall, and a steep negative angle hits the ceiling.
+                  Drag the projector to place it. Drag the spot or the vertical slider to aim. 90° is straight
+                  down on the floor, 0° is horizontal into the wall, and a steep negative angle hits the ceiling.
+                  Horizontal aims left and right and keystones the picture sideways.
                 </p>
-                <Slider
-                  id="gobo-projector"
-                  min={PROJECTOR_MIN}
-                  max={PROJECTOR_MAX}
-                  step={1}
-                  value={[settings.projectorAngle]}
-                  aria-label="Projector angle"
-                  onValueChange={(next) => aimAt(sliderNumber(next))}
-                />
+                <div className="gobo-angles">
+                  <div className="gobo-field">
+                    <Label htmlFor="gobo-projector" className="gobo-field-label">
+                      Vertical
+                      <span>{formatDegrees(settings.projectorAngle)}</span>
+                    </Label>
+                    <Slider
+                      id="gobo-projector"
+                      min={PROJECTOR_MIN}
+                      max={PROJECTOR_MAX}
+                      step={1}
+                      value={[settings.projectorAngle]}
+                      aria-label="Vertical angle"
+                      onValueChange={(next) => aimAt(sliderNumber(next))}
+                    />
+                  </div>
+                  <div className="gobo-field">
+                    <Label htmlFor="gobo-horizontal" className="gobo-field-label">
+                      Horizontal
+                      <span>{formatDegrees(settings.horizontalAngle)}</span>
+                    </Label>
+                    <div className="gobo-bipolar">
+                      <span className="gobo-bipolar-zero" aria-hidden="true" />
+                      <Slider
+                        id="gobo-horizontal"
+                        min={HORIZONTAL_MIN}
+                        max={HORIZONTAL_MAX}
+                        step={1}
+                        value={[settings.horizontalAngle]}
+                        aria-label="Horizontal angle"
+                        onValueChange={(next) => update({ horizontalAngle: sliderNumber(next) })}
+                      />
+                    </div>
+                  </div>
+                </div>
                 <Label className="gobo-check gobo-wall-adjust" htmlFor="gobo-adjust-wall">
                   <Switch
                     id="gobo-adjust-wall"

@@ -409,6 +409,23 @@ html:-webkit-full-screen body {
   align-items: center;
 }
 
+.gobo-angles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.gobo-angles .gobo-field {
+  margin-bottom: 0.35rem;
+}
+
+@media (max-width: 360px) {
+  .gobo-angles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .gobo-throw {
   display: flex;
   flex-direction: column;

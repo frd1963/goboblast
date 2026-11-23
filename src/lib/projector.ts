@@ -10,9 +10,16 @@
  * size. It does not depend on the rotation. On the surface the word stays a constant size.
  * On the screen, a strong keystone still changes the shape as the word swings through the
  * taper — that variation is the projection, not a size change.
+ *
+ * A horizontal angle yaws that same beam. 0° leaves the vertical keystone untouched.
+ * Positive yaw turns the beam to the right, so the right edge of the picture narrows.
  */
 export const PROJECTOR_MIN = -90;
 export const PROJECTOR_MAX = 90;
+
+/** Yaw of the beam, in degrees. 0 is straight ahead. Positive is to the right. */
+export const HORIZONTAL_MIN = -75;
+export const HORIZONTAL_MAX = 75;
 
 const FIT_MARGIN_PX = 28;
 
@@ -135,9 +142,10 @@ export function invertHomography(matrix: readonly number[]): HomographyMatrix {
 
 /**
  * One keystone for the current beam.
- * `angleDeg` is the beam's angle above the floor. `cssSize` is the edge of the
- * unrotated square. The viewport only scales that whole projection down so the
- * square stays on stage. Rotation is not an input.
+ * `angleDeg` is the beam's angle above the floor. `horizontalDeg` yaws that beam
+ * left or right. `cssSize` is the edge of the unrotated square. The viewport only
+ * scales that whole projection down so the square stays on stage. Rotation is not
+ * an input.
  *
  * On the floor, 90° is straight down and has no skew. A lower angle hits the floor
  * more obliquely, and the top of the gobo narrows. On the ceiling, −90° is straight
@@ -145,6 +153,9 @@ export function invertHomography(matrix: readonly number[]): HomographyMatrix {
  * obliqueness, with the tilt inverted so the far edge — the one farther from the
  * projector — narrows. On the wall, 0° is straight on. A beam that drops onto the
  * wall narrows the bottom. A beam that climbs the wall narrows the top.
+ *
+ * Yaw is applied on top of that vertical keystone, for every surface. 0° yaw returns
+ * the vertical keystone unchanged.
  */
 export function keystoneFor(
   angleDeg: number,
@@ -153,6 +164,20 @@ export function keystoneFor(
   viewportHeight: number,
   target: KeystoneTarget = "floor",
   kind: ProjectorThrow = "normal",
+  horizontalDeg = 0,
+): Keystone {
+  const yaw = clampHorizontal(horizontalDeg);
+  if (yaw === 0) return verticalKeystone(angleDeg, cssSize, viewportWidth, viewportHeight, target, kind);
+  return yawKeystone(angleDeg, cssSize, viewportWidth, viewportHeight, target, kind, yaw);
+}
+
+function verticalKeystone(
+  angleDeg: number,
+  cssSize: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  target: KeystoneTarget,
+  kind: ProjectorThrow,
 ): Keystone {
   const center = "translate(-50%, -50%)";
   if (!(cssSize > 0)) return { matrix: IDENTITY, css: center };
@@ -168,6 +193,145 @@ export function keystoneFor(
   if (magnitude < 0.05 || !(sin > 1e-4) || !(k > 1e-4)) return { matrix: IDENTITY, css: center };
   const distance = Math.max(1, ((cssSize / 2) * sin) / k);
   return perspectiveKeystone(cssSize, tilt, distance, viewportWidth, viewportHeight);
+}
+
+/**
+ * Yaw on top of the vertical keystone. The tilt is the same throw model as the
+ * vertical beam, capped the same way, then rotated about Y before the perspective.
+ * Positive yaw narrows the right edge.
+ */
+function yawKeystone(
+  angleDeg: number,
+  cssSize: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  target: KeystoneTarget,
+  kind: ProjectorThrow,
+  yawDeg: number,
+): Keystone {
+  const center = "translate(-50%, -50%)";
+  if (!(cssSize > 0)) return { matrix: IDENTITY, css: center };
+  const half = cssSize / 2;
+  const diagram = clampAngle(angleDeg);
+  const straightOn = clampAngle(surfaceStraightOn(target, diagram));
+  const verticalRatio = floorKeystoneRatio(straightOn, kind);
+  const horizontalRatio = floorKeystoneRatio(clampAngle(90 - Math.abs(yawDeg)), kind);
+  const verticalMagnitude = verticalRatio > 0.999 ? 0 : Math.min(32, (1 - verticalRatio) * 58);
+  const horizontalMagnitude =
+    horizontalRatio > 0.999 ? 0 : Math.min(32, (1 - horizontalRatio) * 58);
+  if (horizontalMagnitude < 0.05) {
+    return verticalKeystone(angleDeg, cssSize, viewportWidth, viewportHeight, target, kind);
+  }
+  const pitchSign = target === "ceiling" ? -1 : target === "wall" ? (diagram < 0 ? 1 : -1) : 1;
+  const pitch = round6(pitchSign * verticalMagnitude);
+  let yaw = round6(Math.sign(yawDeg) * horizontalMagnitude);
+  let distance = perspectiveDistance(half, verticalMagnitude, verticalRatio);
+  if (!(distance > 0)) distance = perspectiveDistance(half, horizontalMagnitude, horizontalRatio);
+  if (!(distance > 0)) {
+    return verticalKeystone(angleDeg, cssSize, viewportWidth, viewportHeight, target, kind);
+  }
+  distance = round6(distance);
+  const ahead = pullInFront(distance, pitch, yaw, half);
+  distance = ahead.distance;
+  yaw = ahead.yaw;
+  if (Math.abs(yaw) < 0.05) {
+    return verticalKeystone(angleDeg, cssSize, viewportWidth, viewportHeight, target, kind);
+  }
+  return perspectiveYaw(cssSize, pitch, yaw, distance, viewportWidth, viewportHeight);
+}
+
+/** Perspective distance that realizes `ratio` at `magnitude` degrees of tilt. 0 when there is no tilt. */
+function perspectiveDistance(half: number, magnitude: number, ratio: number) {
+  if (!(magnitude >= 0.05) || !(ratio < 0.999)) return 0;
+  const k = (1 - ratio) / (1 + ratio);
+  const sin = Math.sin((magnitude * Math.PI) / 180);
+  if (!(sin > 1e-4) || !(k > 1e-4)) return 0;
+  return Math.max(1, (half * sin) / k);
+}
+
+/** Depth of a corner after rotateX(pitch) then rotateY(yaw), in the unscaled beam. */
+function cornerDepth(distance: number, pitch: number, yaw: number, x: number, y: number) {
+  const pitchRad = (pitch * Math.PI) / 180;
+  const yawRad = (yaw * Math.PI) / 180;
+  const sinPitch = Math.sin(pitchRad);
+  const sinYaw = Math.sin(yawRad);
+  const cosYaw = Math.cos(yawRad);
+  const z = -x * sinYaw + y * sinPitch * cosYaw;
+  return distance - z;
+}
+
+/**
+ * Keep every corner of the square in front of the lens. A longer throw is tried
+ * first, then a smaller yaw, so a strong vertical keystone still accepts some sideways skew.
+ */
+function pullInFront(distance: number, pitch: number, yaw: number, half: number) {
+  let dist = distance;
+  const margin = () => Math.max(8, dist * 0.05);
+  const nearest = (next: number, tilt: number) => {
+    let minW = Infinity;
+    for (const x of [-half, half]) {
+      for (const y of [-half, half]) {
+        minW = Math.min(minW, cornerDepth(next, pitch, tilt, x, y));
+      }
+    }
+    return minW;
+  };
+  for (let step = 0; step < 24 && !(nearest(dist, yaw) > margin()); step += 1) dist *= 1.12;
+  if (nearest(dist, yaw) > margin()) return { distance: round6(dist), yaw };
+  let lo = 0;
+  let hi = Math.abs(yaw);
+  for (let step = 0; step < 18; step += 1) {
+    const mid = (lo + hi) / 2;
+    if (nearest(dist, Math.sign(yaw) * mid) > margin()) lo = mid;
+    else hi = mid;
+  }
+  return { distance: round6(dist), yaw: round6(Math.sign(yaw) * lo) };
+}
+
+function perspectiveYaw(
+  cssSize: number,
+  pitchDeg: number,
+  yawDeg: number,
+  distance: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): Keystone {
+  const pitch = round6(pitchDeg);
+  const yaw = round6(yawDeg);
+  const dist = round6(Math.max(distance, 1));
+  const pitchRad = (pitch * Math.PI) / 180;
+  const yawRad = (yaw * Math.PI) / 180;
+  const sinPitch = Math.sin(pitchRad);
+  const cosPitch = Math.cos(pitchRad);
+  const sinYaw = Math.sin(yawRad);
+  const cosYaw = Math.cos(yawRad);
+  const half = cssSize / 2;
+  const projectAt = (x: number, y: number, fit: number) => {
+    const w = dist + sinYaw * x - sinPitch * cosYaw * y;
+    return [
+      (fit * dist * (cosYaw * x + sinPitch * sinYaw * y)) / w,
+      (fit * dist * cosPitch * y) / w,
+    ] as const;
+  };
+  const fit = round6(fitSquare(half, (x, y) => projectAt(x, y, 1), viewportWidth, viewportHeight));
+  const matrix: HomographyMatrix = [
+    fit * dist * cosYaw,
+    fit * dist * sinPitch * sinYaw,
+    0,
+    0,
+    fit * dist * cosPitch,
+    0,
+    sinYaw,
+    -sinPitch * cosYaw,
+    dist,
+  ];
+  const perspectivePx = fit === 1 ? dist : fit * dist;
+  const scale = fit === 1 ? "" : ` scale(${fit})`;
+  const rotateX = Math.abs(pitch) < 0.05 ? "" : ` rotateX(${pitch}deg)`;
+  return {
+    matrix,
+    css: `translate(-50%, -50%) perspective(${perspectivePx}px) rotateY(${yaw}deg)${rotateX}${scale}`,
+  };
 }
 
 function perspectiveKeystone(
@@ -223,6 +387,11 @@ function fitSquare(
 
 function clampAngle(angleDeg: number) {
   return Number.isFinite(angleDeg) ? Math.min(PROJECTOR_MAX, Math.max(PROJECTOR_MIN, angleDeg)) : 0;
+}
+
+function clampHorizontal(angleDeg: number) {
+  if (!Number.isFinite(angleDeg)) return 0;
+  return Math.min(HORIZONTAL_MAX, Math.max(HORIZONTAL_MIN, angleDeg));
 }
 
 function round6(value: number) {

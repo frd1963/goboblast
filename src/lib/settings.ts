@@ -15,7 +15,7 @@ import {
   placementForAngle,
   type BeamSpot,
 } from "@/lib/placement";
-import { PROJECTOR_THROWS, type ProjectorThrow } from "@/lib/projector";
+import { HORIZONTAL_MAX, HORIZONTAL_MIN, PROJECTOR_THROWS, type ProjectorThrow } from "@/lib/projector";
 
 export const STORAGE_KEY = "goboblast-settings";
 
@@ -57,6 +57,11 @@ export type GoboSettings = {
    * aim up, onto the wall or the ceiling. Derived from the projector position and the spot.
    */
   projectorAngle: number;
+  /**
+   * Yaw in degrees, −75 to 75. 0 is straight ahead and leaves the picture unchanged.
+   * Positive turns the beam to the right.
+   */
+  horizontalAngle: number;
   /** 0 is against the wall, 1 is the far side of the room. */
   projectorDistance: number;
   /** 0 is on the floor, 1 is at the ceiling. */
@@ -118,6 +123,7 @@ export const defaultSettings: GoboSettings = {
   rotation: 0,
   spin: 0,
   projectorAngle: DEFAULT_PROJECTOR_ANGLE,
+  horizontalAngle: 0,
   projectorDistance: DEFAULT_DISTANCE,
   projectorHeight: DEFAULT_HEIGHT,
   projectorAim: DEFAULT_AIM,
@@ -197,6 +203,7 @@ export function sanitizeSettings(input: unknown): GoboSettings {
     ),
     spin: round(clamp(raw.spin, SPIN_MIN, SPIN_MAX, defaultSettings.spin), 1),
     ...readPlacement(raw),
+    horizontalAngle: round(clamp(raw.horizontalAngle, HORIZONTAL_MIN, HORIZONTAL_MAX, 0), 0),
     projectorThrow: PROJECTOR_THROWS.find((kind) => kind === raw.projectorThrow) ?? "normal",
     adjustForWall: raw.adjustForWall === true,
     evenBrightness: raw.evenBrightness === true,

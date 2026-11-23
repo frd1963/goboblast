@@ -9,7 +9,14 @@ import {
   clampHeight,
   type BeamSpot,
 } from "@/lib/placement";
-import { PROJECTOR_MAX, PROJECTOR_MIN, THROW_RATIO, type ProjectorThrow } from "@/lib/projector";
+import {
+  HORIZONTAL_MAX,
+  HORIZONTAL_MIN,
+  PROJECTOR_MAX,
+  PROJECTOR_MIN,
+  THROW_RATIO,
+  type ProjectorThrow,
+} from "@/lib/projector";
 
 type Point = { x: number; y: number };
 type DragMode = "projector" | "aim";
@@ -120,6 +127,7 @@ export function ProjectorDial({
   height,
   spot,
   angle,
+  horizontalAngle,
   throwKind,
   onPosition,
   onSpot,
@@ -129,6 +137,7 @@ export function ProjectorDial({
   height: number;
   spot: BeamSpot;
   angle: number;
+  horizontalAngle: number;
   throwKind: ProjectorThrow;
   onPosition: (distance: number, height: number) => void;
   onSpot: (spot: BeamSpot) => void;
@@ -269,6 +278,7 @@ export function ProjectorDial({
         data-aim={spot.surface === "wall" ? 0 : spot.aim}
         data-spot-height={spot.surface === "wall" ? spot.height : 0}
         data-angle={angleFromSpot(distance, height, spot)}
+        data-horizontal={horizontalAngle}
         tabIndex={0}
         onKeyDown={onKeyDown}
       >
@@ -350,6 +360,22 @@ export function ProjectorDial({
         <text x={ROOM.viewW - 12} y={16} textAnchor="end" fill="#c7d2fe" fontSize="16" fontWeight="700">
           {shown}°
         </text>
+        <g aria-hidden="true" data-yaw={horizontalAngle}>
+          <text x={178} y={15} textAnchor="middle" fill="#64748b" fontSize="9">
+            L
+          </text>
+          <line x1={188} y1={11} x2={230} y2={11} stroke="#334155" strokeWidth="2" strokeLinecap="round" />
+          <line x1={209} y1={7} x2={209} y2={15} stroke="#64748b" strokeWidth="1" />
+          <circle
+            cx={209 + (Math.max(HORIZONTAL_MIN, Math.min(HORIZONTAL_MAX, horizontalAngle)) / HORIZONTAL_MAX) * 18}
+            cy={11}
+            r={3.1}
+            fill="#c7d2fe"
+          />
+          <text x={240} y={15} textAnchor="middle" fill="#64748b" fontSize="9">
+            R
+          </text>
+        </g>
       </svg>
     </div>
   );
